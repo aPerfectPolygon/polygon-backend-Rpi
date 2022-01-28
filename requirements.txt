@@ -1,0 +1,87 @@
+# Waitress
+waitress==2.0.0
+
+# jdatetime
+jdatetime==3.6.2
+
+# Numpy
+numpy==1.20.2
+
+# Pandas
+pandas==1.2.4
+python-dateutil==2.8.1
+pytz==2021.1
+six==1.15.0
+lxml==4.6.3  # pandas read html
+
+# excel
+openpyxl==3.0.7
+et-xmlfile==1.1.0
+xlrd==2.0.1
+
+# Psycopg2
+psycopg2==2.8.6
+
+# requests
+requests==2.26.0
+certifi==2020.12.5
+charset-normalizer==2.0.4
+idna==2.10
+urllib3==1.25.7
+
+# termcolor
+termcolor==1.1.0
+
+# aiohttp
+aiohttp==3.7.4.post0
+async-timeout==3.0.1
+attrs==20.3.0
+chardet==4.0.0
+multidict==5.1.0
+typing-extensions==3.10.0.0
+yarl==1.6.3
+
+# psutil
+psutil==5.8.0
+
+# websockets
+websockets==9.1
+
+# markdown
+Markdown==3.3.4
+
+# cryptodome
+pycryptodomex==3.10.1
+py3rijndael==0.3.3
+
+# Django
+Django==3.2.4
+sqlparse==0.4.1
+asgiref==3.3.4
+
+# Django rest framework
+djangorestframework==3.11.0
+
+# Django datetime utc
+django-datetime-utc==1.0.3
+
+# Wrapt Timeout Decorator
+wrapt-timeout-decorator==1.3.1
+wrapt==1.12.1
+dill==0.3.3
+pathlib==1.0.1
+multiprocess==0.70.11.1
+
+# Paste
+Paste==3.5.0
+
+# Gunicorn
+gunicorn==20.1.0
+gevent==21.8.0
+greenlet==1.1.2
+zope.event==4.5.0
+zope.interface==5.4.0
+setproctitle==1.2.2
+
+# numexpr
+numexpr==2.7.3

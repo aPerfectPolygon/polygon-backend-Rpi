@@ -1,0 +1,14 @@
+# Created by .ignore support plugin (hsz.mobi)
+
+/Logs/
+/media/Profile/*
+/media/logs/*
+*.pyc
+.idea/
+
+#cd media && git ls-files -z | xargs -0 git update-index --assume-unchanged && cd .. &&
+#cd .idea && git ls-files -z | xargs -0 git update-index --assume-unchanged && cd .. &&
+#cd __pycache__ && git ls-files -z | xargs -0 git update-index --assume-unchanged && cd ..
+
+# to see ignored files
+#git ls-files -v | grep '^[[:lower:]]'
