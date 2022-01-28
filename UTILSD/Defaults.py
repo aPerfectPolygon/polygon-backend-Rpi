@@ -71,14 +71,6 @@ class Fields:
 		'suspended': 'SUSPENDED',
 	}
 	regex_map = {
-		'first_name': _r(
-			r"^[\u0621-\u0628\u062A-\u063A\u0641-\u0642\u0644-\u0648\u064E-\u0651\u0655\u067E\u0686\u0698\u0020\u2000-\u200F\u2028-\u202F\u06A9\u06AF\u06BE\u06CC\u0629\u0643\u0649-\u064B\u064D\u06D5A-Za-z]{1,30}$",
-			'len<30 && cant contain illegal characters'
-		),
-		'last_name': _r(
-			r"^[\u0621-\u0628\u062A-\u063A\u0641-\u0642\u0644-\u0648\u064E-\u0651\u0655\u067E\u0686\u0698\u0020\u2000-\u200F\u2028-\u202F\u06A9\u06AF\u06BE\u06CC\u0629\u0643\u0649-\u064B\u064D\u06D5A-Za-z]{1,30}$",
-			'len<30 && cant contain illegal characters'
-		),
 		'username': _r(
 			"^(?=.{5,20}$)(?![_.])(?!Candle_)(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$",  # signup/edit-profile regex
 			'not standard',
@@ -99,8 +91,8 @@ class Fields:
 	}
 
 
-app_force_version = 39
-app_current_version = 39
+app_force_version = 1
+app_current_version = 1
 templates = {
 	'main': {
 		'error': 'main/error.html',
@@ -152,14 +144,6 @@ descriptions_api_based = {
 }
 descriptions_message_based = {}
 descriptions_user_info_field_translator = {
-	'first_name': {
-		'fa': 'نام',
-		'en': 'first name',
-	},
-	'last_name': {
-		'fa': 'نام خانوادگی',
-		'en': 'last name',
-	},
 	'username': {
 		'fa': 'نام کاربری',
 		'en': 'username',

@@ -582,6 +582,6 @@ class ForgetPassword:
 			data[['is_used']]
 		)
 		
-		engines.Email.send(email, 'PasswordChanged', djn_def.links['website'])
+		engines.Email.send(email, 'PasswordChanged', 'OK')
 		request.input_body.update({'password': '******'})
 		return request

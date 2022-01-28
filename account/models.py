@@ -6,8 +6,6 @@ from rest_framework.authtoken.models import Token
 
 class Account(AbstractBaseUser):
 	# id = models.IntegerField(primary_key=True, auto_created=True)
-	first_name = models.CharField('first_name', max_length=30, blank=False, null=False)
-	last_name = models.CharField('last_name', max_length=30, blank=False, null=False)
 	username = models.CharField('username', max_length=20, unique=True, null=False, blank=False)
 	password = models.CharField('password', max_length=128)
 	email = models.EmailField('email', max_length=60, unique=True, default=None)

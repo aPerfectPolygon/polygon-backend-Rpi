@@ -15,9 +15,12 @@ from UTILS.prj_utils.FirstSetup import git_puller, sync_venv
 def server_first_setup():
 	db = Psql('', open=True)
 	if db.conn is None:
-		print(
-			f'run this query -> *create database "{Databases["default"]["name"]}" with owner "{Databases["default"]["user"]}"*')
-		return
+		db.create_user_with_default_user()
+		db.create_db()
+		db = Psql('', open=True)
+		if db.conn is None:
+			Log.log('cant create Database')
+			return
 		
 	# region constants
 	db.schema = 'constants'
@@ -88,6 +91,35 @@ def server_first_setup():
 	
 	# endregion
 	
+	# region logs
+	db.schema = 'logs'
+	db.create_schema()
+	
+	db.create(
+		'log',
+		{
+			'id': 'serial primary key',
+			'url': 'varchar(500) default null',
+			'body': 'json default null',
+			'params': 'json default null',
+			'raw_text': 'varchar(500) default null',
+			'header': 'json default null',
+			'ip': 'varchar default null',
+			'uid': 'integer  default null',
+			'location': 'varchar(500) default null',
+			'response_message': 'varchar(500) default null',
+			'response_result': 'json default null',
+			'response_headers': 'json default null',
+			'response_code': 'integer  default null',
+			'comment': 'varchar(500) default null',
+			'start': 'timestamp default null',
+			'server_ip': 'varchar(100) default null',
+		},
+		ts_columns='created',
+	)
+	
+	# endregion
+	
 	# region users_data
 	db.schema = 'users_data'
 	db.create_schema()
@@ -143,7 +175,6 @@ def server_first_setup():
 				'id': 'serial primary key',
 				'uid': 'integer  references users_data.account_account(id) on delete cascade',
 				
-				'avatar': "varchar(100) default 'media/static/male/1.png'",
 				'auth_email': "boolean default false",
 			},
 			ts_columns=['created', 'modified']

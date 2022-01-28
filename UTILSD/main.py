@@ -190,22 +190,17 @@ class ApiInfo:
 class CustomUser:
 	info_fields = {
 		'main': [
-			'first_name',
-			'last_name',
 			'username',
 			'email',
 			'status'
 		],
 		'info': [
-			'avatar',
 			'auth_email',
 		],
 		'get_token': True,
 	}
 	all_fields = {
 		'main': [
-			'first_name',
-			'last_name',
 			'username',
 			'password',
 			'email',
@@ -219,7 +214,6 @@ class CustomUser:
 			'modified',
 		],
 		'info': [
-			'avatar',
 			'auth_email',
 			
 			'created',
@@ -234,8 +228,6 @@ class CustomUser:
 		self.token = None
 		
 		# main
-		self.first_name = None
-		self.last_name = None
 		self.username = None
 		self.password = None
 		self.email = None
@@ -248,7 +240,6 @@ class CustomUser:
 		self.m_modified = None
 		
 		# info
-		self.avatar = None
 		self.auth_email = None
 		self.i_created = None
 		self.i_modified = None
@@ -265,8 +256,6 @@ class CustomUser:
 			'bad_user': self.bad_user,
 			'uid': self.uid,
 			'token': self.token,
-			'first_name': self.first_name,
-			'last_name': self.last_name,
 			'username': self.username,
 			'password': self.password,
 			'email': self.email,
@@ -277,7 +266,6 @@ class CustomUser:
 			'is_staff': self.is_staff,
 			'is_superuser': self.is_superuser,
 			'm_modified': self.m_modified,
-			'avatar': self.avatar,
 			'auth_email': self.auth_email,
 			'i_created': self.i_created,
 			'i_modified': self.i_modified,
@@ -303,8 +291,6 @@ class CustomUser:
 					{
 						'template': 'info',  # all
 						'main': [
-							'first_name',
-							'last_name',
 							'username',
 							'password',
 							'email',
@@ -318,7 +304,6 @@ class CustomUser:
 							'modified',
 						],
 						'info': [
-							'avatar',
 							'auth_email',
 
 							'created',
@@ -461,14 +446,9 @@ class CustomUser:
 			uid: int
 			token: str
 			status: str
-			first_name: str
-			last_name: str
 			username: str
 			email: str
 			auth_email: bool
-			avatar: str
-			curr_version: int
-			force_version: int
 
 		Django Errors:
 		-----
@@ -490,12 +470,9 @@ class CustomUser:
 			'uid': self.uid,
 			'token': self.token,
 			'status': self.status,
-			'first_name': self.first_name,
-			'last_name': self.last_name,
 			'username': self.username,
 			'email': self.email,
 			'auth_email': self.auth_email,
-			'avatar': djn_def.links["media_server_converter"](self.avatar),
 			# endregion
 			# region version specification
 			'curr_version': djn_def.app_current_version,
@@ -1453,7 +1430,9 @@ class MainMiddleware:
 				}
 				request.headers.update(to_update)
 				request.META.update(to_update)
-			
+			elif request.info.platform == djn_def.Platforms.test:
+				request.headers.update({'token': request.headers.get('HTTP_AUTHENTICATION', None)})
+				
 			return request
 		
 		@staticmethod
@@ -1649,6 +1628,8 @@ class MainMiddleware:
 				data = result.data
 				if request.info.output_model == djn_def.Models.app:
 					result.content = f'"{Encryptions.V1().encrypt(Json.encode(data))}"'
+				elif request.info.output_model == djn_def.Models.test:
+					result.content = Json.encode(data)
 				del result.data
 			
 			return result
@@ -2584,34 +2565,6 @@ def gen_random_username(db: Psql) -> str:
 	while db.exists('account_account', [('username', '=', name)], schema='users_data'):
 		name = f'polygon_{String.gen_random_with_timestamp()}'
 	return name
-
-
-def gen_random_avatar_name(db: Psql, _type: str) -> str:
-	"""
-	generate random name for user's avatar and check for it to not be duplicate
-	db: Psql(server)
-	"""
-	name = f'avatar_{String.gen_random_with_timestamp()}.{_type}'
-	while db.exists('users_info', [('avatar', '=', name)], schema='users_data'):
-		name = f'avatar_{String.gen_random_with_timestamp()}.{_type}'
-	return name
-
-
-def gen_random_discount_code(db: Psql, prefix: str = None) -> str:
-	"""
-	generate random discount_code and check for it to not be duplicate
-	db: Psql(server)
-	"""
-	words = 'abcdefghkmnopqrstuvwxyz023456789'
-	code = String.gen_random(7, words)
-	if prefix:
-		code = prefix + code
-	while db.exists('discount_codes', [('code', '=', code)], schema='constants'):
-		code = String.gen_random(7, words)
-		if prefix:
-			code = prefix + code
-	return code
-
 
 # endregion
 

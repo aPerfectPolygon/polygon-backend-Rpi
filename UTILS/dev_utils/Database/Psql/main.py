@@ -15,12 +15,18 @@ from UTILS.dev_utils import Defaults as dev_def
 from UTILS.dev_utils import Log
 from UTILS.dev_utils.Objects import String, Time, Dict, Json, List
 
-__reader = configparser.ConfigParser()
 __root = str(dev_def.project_root)
-__reader.read(__root[:__root.find('Project/')] + 'Files/db.conf')
+__root = __root[:__root.find('Project/')] + 'Files/'
+__reader = configparser.ConfigParser()
+__reader.read(__root + 'db.conf')
 # noinspection PyProtectedMember
 Databases = __reader._sections
 Databases.update({'default': list(Databases.values())[0]})
+__reader = configparser.ConfigParser()
+__reader.read(__root + 'dbUsers.conf')
+# noinspection PyProtectedMember
+DatabseUsers = __reader._sections
+DatabseUsers.update({'default': list(DatabseUsers.values())[0]})
 
 
 class Psql:
@@ -163,26 +169,8 @@ class Psql:
 		destination += f'/{t_now}'
 		os.makedirs(destination, exist_ok=True)
 		
-		command_server = f'pg_dump --dbname=postgresql://%s:%s@%s:%s/%s ' % (
-			Databases['IRFX']['user'],
-			Databases['IRFX']['pass'],
-			Databases['IRFX']['host'],
-			Databases['IRFX']['port'],
-			Databases['IRFX']['name']
-		)
-		command_candle_storage = f'pg_dump --dbname=postgresql://%s:%s@%s:%s/%s ' % (
-			Databases['candleStorage']['user'],
-			Databases['candleStorage']['pass'],
-			Databases['candleStorage']['host'],
-			Databases['candleStorage']['port'],
-			Databases['candleStorage']['name']
-		)
-		
-		command_server += f'-f {destination}/IRFX.sql'
-		command_candle_storage += f'-f {destination}/candleStorage.sql'
-		
-		os.system(command_server)
-		os.system(command_candle_storage)
+		# todo
+		pass
 	
 	@staticmethod
 	def restore():
@@ -190,24 +178,8 @@ class Psql:
 		destination = sibling / r'dbBackup/psql'
 		destination = str(destination / sorted(os.listdir(destination), reverse=True)[0])
 		
-		command_server = f'psql --dbname=postgresql://%s:%s@%s:%s/%s -f %s/IRFX.sql' % (
-			Databases['IRFX']['user'],
-			Databases['IRFX']['pass'],
-			Databases['IRFX']['host'],
-			Databases['IRFX']['port'],
-			Databases['IRFX']['name'],
-			destination,
-		)
-		command_candle_storage = f'psql --dbname=postgresql://%s:%s@%s:%s/%s -f %s/candleStorage.sql' % (
-			Databases['candleStorage']['user'],
-			Databases['candleStorage']['pass'],
-			Databases['candleStorage']['host'],
-			Databases['candleStorage']['port'],
-			Databases['candleStorage']['name'],
-			destination,
-		)
-		os.system(command_server)
-		os.system(command_candle_storage)
+		# todo
+		pass
 	
 	def handle_kwargs(self, kwargs) -> dict:
 		return {
@@ -507,6 +479,12 @@ class Psql:
 		if self.conn is not None:
 			self.close()
 			self.open()
+	
+	def create_user_with_default_user(self):
+		os.system(f""" psql "host={self.db_properties['host']} port={self.db_properties['port']} user='{DatabseUsers['default']['user']}' password='{DatabseUsers['default']['pass']}' dbname=template1" -c "create user {self.db_properties['user']} superuser createdb createrole replication bypassrls encrypted password '{self.db_properties['pass']}'" """)
+		
+	def create_db(self):
+		os.system(f""" psql "host={self.db_properties['host']} port={self.db_properties['port']} user='{self.db_properties['user']}' password='{self.db_properties['pass']}' dbname=template1" -c 'create database "{self.db_properties['name']}" with owner "{self.db_properties['user']}"' """)
 	
 	def create(self, table: str, columns: ty.Dict[str, str], **kwargs) -> bool:
 		"""
