@@ -36,6 +36,32 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 		
 		# endregion
 		
+		# region ForgetPasswordSeries
+		base_info.path_generator(
+			'User/ForgetPasswordSeries/send',
+			v.User.ForgetPasswordSeries.send,
+			input_body_required={
+				'email': [str],
+			}
+		),
+		base_info.path_generator(
+			'User/ForgetPasswordSeries/verify',
+			v.User.ForgetPasswordSeries.verify,
+			input_body_required={
+				'email': [str],
+				'token': [str],
+			}
+		),
+		base_info.path_generator(
+			'User/ForgetPasswordSeries/change',
+			v.User.ForgetPasswordSeries.change,
+			input_body_required={
+				'email': [str],
+				'password': [str],
+			}
+		),
+		# endregion
+		
 		# endregion
 	]
 

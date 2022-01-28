@@ -1,2 +1,2 @@
-from . import SignupSeries
 from .main import *
+from . import SignupSeries, ForgetPasswordSeries

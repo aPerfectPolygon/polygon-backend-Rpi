@@ -102,6 +102,10 @@ templates = {
 		'signupSeries': {
 			'signup': 'email/signupSeries/signup.html',
 			'welcome': 'email/signupSeries/welcome.html',
+		},
+		'forgetPasswordSeries': {
+			'to_change': 'email/forgetPasswordSeries/to_change.html',
+			'changed': 'email/forgetPasswordSeries/changed.html',
 		}
 	}
 }

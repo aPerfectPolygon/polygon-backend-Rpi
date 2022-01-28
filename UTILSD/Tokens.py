@@ -245,9 +245,7 @@ class ForgetPassword:
 	@staticmethod
 	def send(request: djn_utils.CustomRequest, email: str, **kwargs) -> djn_utils.CustomRequest:
 		"""
-		UpdatedAt: 2021-10-06
-			2021-08-02 -> remove extra errors
-			2021-10-06 -> added `suspended_user` error
+		UpdatedAt: ---
 
 		About:
 		-----
@@ -310,19 +308,22 @@ class ForgetPassword:
 		
 		token = kwargs.pop('token', Int.gen_random(5))
 		
-		# request.db.delete('tokens_forget_pass', [('uid', '=', user.uid)])
+		request.db.server.delete('tokens_forget_pass', [('uid', '=', user.uid)])
 		request.db.server.insert('tokens_forget_pass', pd.DataFrame(columns=['uid', 'token'], data=[[user.uid, token]]))
 		
-		engines.Email.send(user.email, 'ChangePasswordVerify', token)
+		engines.Email.send(
+			user.email,
+			'Forget Password Verification',
+			template=djn_def.templates['email']['forgetPasswordSeries']['to_change'],
+			template_content={'token': token}
+		)
 		
 		return request
 	
 	@staticmethod
 	def verify(request: djn_utils.CustomRequest, email: str, token: str) -> djn_utils.CustomRequest:
 		"""
-		UpdatedAt: 2021-10-06
-			2021-08-02 -> remove extra errors
-			2021-10-06 -> added `suspended_user` error
+		UpdatedAt: ---
 
 		About:
 		-----
@@ -449,12 +450,7 @@ class ForgetPassword:
 	@staticmethod
 	def change(request: djn_utils.CustomRequest, email: str, password: str) -> djn_utils.CustomRequest:
 		"""
-		UpdatedAt: 2021-10-06
-			2021-08-02 ->
-				remove extra errors
-				moved [`already_used`(409)] to main errors from possible attack errors
-			2021-10-06 -> added `suspended_user` error
-			2021-11-30 -> renamed possible attack errors to bad_input
+		UpdatedAt: ---
 
 		About:
 		-----
@@ -588,6 +584,10 @@ class ForgetPassword:
 			data[['is_used']]
 		)
 		
-		engines.Email.send(email, 'PasswordChanged', 'OK')
+		engines.Email.send(
+			user.email,
+			'Password Changed',
+			template=djn_def.templates['email']['forgetPasswordSeries']['changed'],
+		)
 		request.input_body.update({'password': '******'})
 		return request
