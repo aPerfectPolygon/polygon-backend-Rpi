@@ -167,7 +167,7 @@ class Email:
 			)
 		
 		request.User.uid = int(user[0])
-		request.User.info(request, {'template': 'info', 'main': ['referred_by'], 'activities': ['signup']})
+		request.User.info(request, {'template': 'info'})
 		user = request.User
 		
 		if request.User.status == djn_def.Fields.status_map['suspended']:

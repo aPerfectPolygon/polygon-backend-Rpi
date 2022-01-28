@@ -532,6 +532,14 @@ class CustomUser:
 						schema='users_data'
 					)
 					self.auth_email = True
+				if self.status == djn_def.Fields.status_map['inactive']:
+					request.db.server.update(
+						'account_account',
+						pd.DataFrame(columns=['status'], data=[[djn_def.Fields.status_map['active']]]),
+						[('id', '=', uid)],
+						schema='users_data'
+					)
+					self.status = djn_def.Fields.status_map['active']
 			else:
 				if self.auth_email:
 					request.db.server.update(
@@ -541,7 +549,15 @@ class CustomUser:
 						schema='users_data'
 					)
 					self.auth_email = False
-		
+				if self.status == djn_def.Fields.status_map['active']:
+					request.db.server.update(
+						'account_account',
+						pd.DataFrame(columns=['status'], data=[[djn_def.Fields.status_map['inactive']]]),
+						[('id', '=', uid)],
+						schema='users_data'
+					)
+					self.status = djn_def.Fields.status_map['inactive']
+					
 		return self
 	
 	def signup(self, request, email: str, password: str, **kwargs):
