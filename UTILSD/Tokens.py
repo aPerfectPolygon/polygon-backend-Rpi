@@ -98,7 +98,12 @@ class Email:
 		
 		request.db.server.delete('tokens_email', [('uid', '=', user.uid)])
 		request.db.server.insert('tokens_email', pd.DataFrame(columns=['uid', 'token'], data=[[user.uid, token]]))
-		engines.Email.send(user.email, 'SignUpVerify', token)
+		engines.Email.send(
+			user.email,
+			'Activation',
+			template=djn_def.templates['email']['signupSeries']['signup'],
+			template_content={'token': token}
+		)
 		
 		return request
 	
@@ -228,8 +233,9 @@ class Email:
 		
 		engines.Email.send(
 			user.email,
-			'welcomee',
-			user.username,
+			'Welcome',
+			template=djn_def.templates['email']['signupSeries']['welcome'],
+			template_content={'username': user.username}
 		)
 		
 		return request

@@ -33,7 +33,7 @@ class Messages:
 	not_available = '[NOT AVAILABLE]'
 	
 	# endregion
-
+	
 	pass
 
 
@@ -96,9 +96,13 @@ app_current_version = 1
 templates = {
 	'main': {
 		'error': 'main/error.html',
-		'force_update': 'main/force_update.html',
 		'success': 'main/success.html',
-		'forward': 'main/forward.html',
+	},
+	'email': {
+		'signupSeries': {
+			'signup': 'email/signupSeries/signup.html',
+			'welcome': 'email/signupSeries/welcome.html',
+		}
 	}
 }
 links = {}
