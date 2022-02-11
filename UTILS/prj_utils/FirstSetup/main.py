@@ -8,7 +8,7 @@ import pandas as pd
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
 
-from UTILS.dev_utils.Database.Psql.main import Psql, Databases
+from UTILS.dev_utils.Database.Psql.main import Psql
 from UTILS.prj_utils.FirstSetup import git_puller, sync_venv
 
 

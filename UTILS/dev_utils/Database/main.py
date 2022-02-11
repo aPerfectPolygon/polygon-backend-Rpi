@@ -64,7 +64,7 @@ def log(
 		db = request.db.server
 	
 	if db is None:
-		db = Psql('logs', open=True, db_name=prj_def.server_mode)
+		db = Psql('logs', open=True)
 		auto_connection = True
 	else:
 		auto_connection = False

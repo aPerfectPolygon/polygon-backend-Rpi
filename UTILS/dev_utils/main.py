@@ -217,6 +217,10 @@ def safe_request(
 		response.Json = Json.decode(response.text, silent=True)
 		response.is_success = True
 		response.headers = dict(response.headers)
+		
+		if _encoding:
+			response.encoding = _encoding
+		
 		# noinspection PyTypeChecker
 		return response
 	
@@ -239,6 +243,8 @@ def safe_request(
 			proxies = dev_def.proxies
 		else:
 			proxies = None
+	
+	_encoding = kwargs.pop('encoding', None)
 	
 	# check `expected_codes` type
 	if isinstance(expected_codes, int):
@@ -619,6 +625,38 @@ stopsignal={stopsignal} """
 		with open(addr, 'w', encoding='utf-8') as f:
 			f.write(config)
 		os.system(f'sudo supervisorctl reread && sudo supervisorctl update && supervisorctl restart {program}')
+
+
+class MultiLingual:
+	__all = dev_def.Languages.all
+	
+	def __init__(self, data: ty.Dict[str, ty.Dict[str, str]] = None):
+		self.by_lang = {lang: {} for lang in self.__all}
+		self.by_key = {}
+		if data:
+			self.update(data)
+	
+	def asdict(self):
+		return {'by_lang': self.by_lang, 'by_key': self.by_key}
+	
+	def update(self, data: ty.Dict[str, ty.Dict[str, str]]):
+		for k, languauges in data.items():
+			if k not in self.by_key:
+				self.by_key.update({k: {lang: '' for lang in self.__all}})
+			
+			for lang in self.__all:
+				if lang not in languauges:
+					if lang in self.by_key[k] and self.by_key[k][lang]:
+						languauges.update({lang: self.by_key[k][lang]})
+					else:
+						Log.log(f'no translation for `{k}` in `{lang}`')
+						languauges.update({lang: ''})
+				self.by_lang[lang].update({k: languauges[lang]})
+			self.by_key.update({k: languauges})
+
+
+def if_truthiness(x, none=None):
+	return x if x else none
 
 
 if __name__ == '__main__':

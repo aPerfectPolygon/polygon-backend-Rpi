@@ -144,6 +144,7 @@ def change(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 	"""
 	email = request.input_body['email']
 	password = request.input_body['password']
-
+	request.input_body['password'] = '******'
+	
 	request = Tokens.ForgetPassword.change(request, email, password)
 	return djn_utils.d_response(request, djn_def.Messages.ok)

@@ -16,7 +16,7 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect
 from django.template.response import SimpleTemplateResponse
-from django.urls import path
+from django.urls import path, re_path
 from django.urls import resolve, ResolverMatch
 from rest_framework import exceptions
 from rest_framework.decorators import api_view
@@ -44,7 +44,7 @@ class ApiInfo:
 	token_required -> select if this API needs to authenticate user's before accessing it
 		SeeAlso: UTILSD.main.MainMiddleware.utils.check_user_if_required
 	token_expiration_in_seconds -> how many seconds must pass for token to expire
-			SeeAlso: UTILSD.main.MainMiddleware.utils.check_user_if_required
+		SeeAlso: UTILSD.main.MainMiddleware.utils.check_user_if_required
 
 	response_just_message -> just return `Message`:str as response
 		SeeAlso: UTILSD.main._make_json_response_ready
@@ -58,22 +58,21 @@ class ApiInfo:
 	user_fields_needed -> set user fields needed for API to fetch them from DB and update `request.User`
 		for all fields SeeAlso: UTILSD.main.CustomUser.info
 
-	** for more info about input keys SeeAlso: UTILSD.main.MainMiddleware.utils.check_api_input_data **
-	input_params_required -> which keys must be in request parameters
-	input_params_optional -> which keys can be in request parameters
+	input_params_required -> which keys MUST be in request parameters
+	input_params_optional -> which keys CAN be in request parameters
 	input_params_block_additional -> block(raise) if additional keys where in request parameters?
-	input_body_required -> which keys must be in request body
-	input_body_optional -> which keys can be in request body
+	input_body_required -> which keys MUST be in request body
+	input_body_optional -> which keys CAN be in request body
 	input_body_block_additional -> block(raise) if additional keys where in request body?
 	validation_error_as_possible_attack -> to treat errors about input as possible attack
+	** for more info about input keys SeeAlso: UTILSD.main.MainMiddleware.utils.check_api_input_data **
 
-	allow_files -> if a file was uploaded to this API treat it as possible_attack
-	
 	content_types_to_accept_standard -> [DO NOT CHANGE] (used by middleware) new items will be appended and drop_duplicated
 	content_types_to_accept -> content types to support in addition to *content_types_to_accept_standard*
 	
-	"""
+	allow_files -> if a file was uploaded to this API treat it as possible_attack
 	
+	"""
 	platform: str = None
 	methods: ty.List[str] = None
 	name: str = None
@@ -101,10 +100,10 @@ class ApiInfo:
 	input_body_block_additional: bool = True
 	validation_error_as_possible_attack: bool = True
 	
-	allow_files = False
-	
 	content_types_to_accept_standard = ['application/json', 'multipart/form-data', 'text/plain']
 	content_types_to_accept = [*content_types_to_accept_standard]
+	
+	allow_files = False
 	
 	attrs = [
 		'platform',
@@ -127,9 +126,9 @@ class ApiInfo:
 		'input_body_block_additional',
 		'validation_error_as_possible_attack',
 		'response_html',
-		'allow_files',
 		'content_types_to_accept_standard',
 		'content_types_to_accept',
+		'allow_files'
 	]
 	
 	def __init__(
@@ -140,12 +139,14 @@ class ApiInfo:
 			output_model: str = djn_def.Models.none,
 			**kwargs
 	):
+		# region validate
 		if platform not in djn_def.Platforms.all and platform != djn_def.Platforms.none:
 			raise ValueError(f'bad platform {platform}')
 		if input_model not in djn_def.Models.all and input_model != djn_def.Models.none:
 			raise ValueError(f'bad input_model {input_model}')
 		if output_model not in djn_def.Models.all and output_model != djn_def.Models.none:
 			raise ValueError(f'bad output_model {output_model}')
+		# endregion
 		
 		if methods is None:
 			methods = []
@@ -178,13 +179,21 @@ class ApiInfo:
 		return res
 	
 	def path_generator(self, url: str, callback: callable, **kwargs):
-		_n = url.replace('/', '_')
-		return path(
-			url,
-			callback,
-			name=_n,
-			kwargs={'info': self.update(name=_n, **kwargs)}
-		)
+		_n = kwargs.pop('name', url.replace('/', '_'))
+		if kwargs.pop('re_path', False):
+			return re_path(
+				url,
+				callback,
+				name=_n,
+				kwargs={'info': self.update(name=_n, **kwargs)}
+			)
+		else:
+			return path(
+				url,
+				callback,
+				name=_n,
+				kwargs={'info': self.update(name=_n, **kwargs)}
+			)
 
 
 class CustomUser:
@@ -210,20 +219,16 @@ class CustomUser:
 			'is_admin',
 			'is_staff',
 			'is_superuser',
-			
 			'modified',
 		],
 		'info': [
 			'auth_email',
-			
-			'created',
 			'modified',
 		],
 		'get_token': True
 	}
 	
 	def __init__(self):
-		self.bad_user = False
 		self.uid = None
 		self.token = None
 		
@@ -241,7 +246,6 @@ class CustomUser:
 		
 		# info
 		self.auth_email = None
-		self.i_created = None
 		self.i_modified = None
 	
 	def __repr__(self):
@@ -253,7 +257,6 @@ class CustomUser:
 	def data_as_dict(self) -> dict:
 		"""return user's data as dictionary"""
 		return {
-			'bad_user': self.bad_user,
 			'uid': self.uid,
 			'token': self.token,
 			'username': self.username,
@@ -267,52 +270,40 @@ class CustomUser:
 			'is_superuser': self.is_superuser,
 			'm_modified': self.m_modified,
 			'auth_email': self.auth_email,
-			'i_created': self.i_created,
 			'i_modified': self.i_modified,
 		}
 	
-	def info(self, request, fields: dict, **kwargs):
+	def info(self, request, fields: dict):
 		"""
 		UpdatedAt: ---
 
 		About:
 		-----
-		fetch specified `fields` of users data in database and update `self` with them
+		fetch specified `fields` of users data from database and update `self` with them
 
 		Parameters:
 		-----
 		request: CustomRequest
-		fields: [dict, str], union
-			Examples:
-				str:
-					'all' -> get all user's data from db
-					'info' -> get required data for user's info API from db
-				dict:
-					{
-						'template': 'info',  # all
-						'main': [
-							'username',
-							'password',
-							'email',
-							'status',
-							'date_joined',
-							'last_login',
-							'is_admin',
-							'is_staff',
-							'is_superuser',
-
-							'modified',
-						],
-						'info': [
-							'auth_email',
-
-							'created',
-							'modified',
-						],
-						'get_token': true,
-					}
-		**kwargs: dict optional
-			uid: int, default -> self.uid
+		fields: dict = {
+		| 	'template': 'info',  # or all
+		| 	'main': [
+		| 		'username',
+		| 		'password',
+		| 		'email',
+		| 		'status',
+		| 		'date_joined',
+		| 		'last_login',
+		| 		'is_admin',
+		| 		'is_staff',
+		| 		'is_superuser',
+		| 		'modified',
+		| 	],
+		| 	'info': [
+		| 		'auth_email',
+		| 		'modified',
+		| 	],
+		| 	'get_token': true,
+		| }
 
 		Django Errors:
 		-----
@@ -335,17 +326,19 @@ class CustomUser:
 			| -------------------------------------------------------
 		"""
 		
+		# region prepare fields
 		template = fields.pop('template', None)
 		if template:
-			template_data = None
 			if template == 'info':
 				template_data = self.info_fields
 			elif template == 'all':
 				template_data = self.all_fields
+			else:
+				template_data = None
 			
 			if template_data:
 				for k, v in template_data.items():
-					if k in fields:
+					if k in fields and isinstance(fields[k], list):
 						fields.update({k: List.drop_duplicates(fields[k] + v)})
 					else:
 						fields.update({k: v})
@@ -356,20 +349,18 @@ class CustomUser:
 		
 		main_fields = fields.get('main', [])
 		info_fields = fields.get('info', [])
-		uid = kwargs.get('uid', self.uid)
 		
-		if all(item == [] for item in [
-			main_fields,
-			info_fields,
-		]):
+		if not (main_fields + info_fields):
 			d_raise(
 				request,
 				djn_def.Messages.unexpected,
-				f'no fields specified ({request.info.name})',
-				do_raise=True
+				f'(not raised)  no fields specified ({request.info.name})',
+				do_raise=False
 			)
 			return self
+		# endregion
 		
+		# region prepare joins
 		_joins = []
 		if main_fields:
 			if 'modified' in main_fields:
@@ -379,50 +370,44 @@ class CustomUser:
 			if 'modified' in info_fields:
 				info_fields.remove('modified')
 				info_fields.append('info.modified as i_modified')
-			if 'created' in info_fields:
-				info_fields.remove('created')
-				info_fields.append('info.created as i_created')
 			_joins.append('inner join users_data.users_info info on acc.id = info.uid')
 		if get_token:
 			_joins.append(f'left join users_data."users_token_{request.info.platform}" u_token on acc.id = u_token.uid')
+		# endregion
 		
-		_select_fields = []
-		for item in main_fields + info_fields:
-			if '.' in item:
-				_select_fields.append(item)
-			else:
-				_select_fields.append(f'"{item}"')
+		# region prepare selects
+		_select_fields = [item if '.' in item else f'"{item}"' for item in main_fields + info_fields]
 		if get_token:
 			_select_fields.append('u_token.token as "token"')
+		# endregion
 		
-		_joins = '\n\t'.join(_joins)
-		_q = f"""
-		select {','.join(_select_fields)}
-			from users_data.account_account acc
-				{_joins}
-			where acc.id = {uid}
-		"""
-		# Print(_q)
-		
-		data = request.db.server.custom(_q, None, to_commit=False, to_fetch=True)
-		if data.empty:
-			self.bad_user = True
+		# region fetch from db
+		try:
+			data = request.db.server.custom(
+				f"select {','.join(_select_fields)} from users_data.account_account acc {' '.join(_joins)} where acc.id = {self.uid}",
+				None,
+				to_commit=False,
+				to_fetch=True,
+				# print_query=True
+			).to_dict(orient='records')[0]
+		except IndexError:
 			d_raise(
 				request,
 				djn_def.Messages.unexpected,
-				f'uid Not Found ({uid})',
+				f'(not raised)  uid Not Found `{self.uid}`',
 				do_raise=False
 			)
 			return self
-		data = data.to_dict(orient='records')[0]
-		self.uid = uid
+		# endregion
 		
+		# region assiginig
 		for _f in main_fields + info_fields:
 			if ' as ' in _f:
 				_f = _f.split(' as ')[1]
 			setattr(self, _f, data[_f])
 		if get_token:
 			self.token = data['token']
+		# endregion
 		
 		return self
 	
@@ -437,8 +422,6 @@ class CustomUser:
 		Parameters:
 		-----
 		request: CustomRequest
-		**kwargs: dict optional
-			uid: int, default -> self.uid
 
 		Response:
 		-----
@@ -449,6 +432,8 @@ class CustomUser:
 			username: str
 			email: str
 			auth_email: bool
+			curr_version: int
+			force_version: int
 
 		Django Errors:
 		-----
@@ -459,11 +444,7 @@ class CustomUser:
 		possible attack:
 			| ---
 		unexpected:
-			| status: 400
-			| comment: (not raised)  uid Not Found
-			| Message: UTILSD.Defaults.Messages.unexpected
-			| Result: null
-			| -------------------------------------------------------
+			| ---
 		"""
 		return {
 			# region info
@@ -480,7 +461,7 @@ class CustomUser:
 			# endregion
 		}
 	
-	def authenticate_email(self, request, **kwargs):
+	def authenticate_email(self, request, new_status: bool = True):
 		"""
 		UpdatedAt: ---
 
@@ -491,94 +472,84 @@ class CustomUser:
 		Parameters:
 		-----
 		request: CustomRequest
-		**kwargs: dict optional
-			uid: int, default -> self.uid
-			new_status: bool, default -> True
-				what is user's email authentication new status
+		new_status: bool, default -> True
+			what is user's email authentication new status
 
 		Django Errors:
 		-----
 		main:
-			| ---
+			| status: 403
+			| comment: cant authenticate suspended user`s email
+			| Message: UTILSD.Defaults.Messages.suspended_user
+			| Result: null
+			| ----------------------------------------------------
 		links:
 			| ---
 		possible attack:
 			| ---
 		unexpected:
-			| status: 400
-			| comment: (not raised)  uid Not Found
-			| Message: UTILSD.Defaults.Messages.unexpected
-			| Result: null
-			| -------------------------------------------------------
+			| ---
 		"""
-		uid = kwargs.pop('uid', self.uid)
-		if not uid:
+		# self.info(request, {'main': ['status'], 'info': ['auth_email']})
+		
+		if self.status == djn_def.Fields.status_map['suspended']:
 			d_raise(
 				request,
-				djn_def.Messages.unexpected,
-				f'no user specified',
-				do_raise=False
+				djn_def.Messages.suspended_user,
+				f'cant authenticate suspended user`s email with new_status({new_status})',
+				code=403,
 			)
-			return
 		
-		# self.info({'main': ['status'], 'info': ['auth_email']}, uid)
-		if self.status != djn_def.Fields.status_map['suspended']:
-			if kwargs.pop('new_status', True):
-				if not self.auth_email:
-					request.db.server.update(
-						'users_info',
-						pd.DataFrame(columns=['auth_email'], data=[[True]]),
-						[('uid', '=', uid)],
-						schema='users_data'
-					)
-					self.auth_email = True
-				if self.status == djn_def.Fields.status_map['inactive']:
-					request.db.server.update(
-						'account_account',
-						pd.DataFrame(columns=['status'], data=[[djn_def.Fields.status_map['active']]]),
-						[('id', '=', uid)],
-						schema='users_data'
-					)
-					self.status = djn_def.Fields.status_map['active']
-			else:
-				if self.auth_email:
-					request.db.server.update(
-						'users_info',
-						pd.DataFrame(columns=['auth_email'], data=[[False]]),
-						[('uid', '=', uid)],
-						schema='users_data'
-					)
-					self.auth_email = False
-				if self.status == djn_def.Fields.status_map['active']:
-					request.db.server.update(
-						'account_account',
-						pd.DataFrame(columns=['status'], data=[[djn_def.Fields.status_map['inactive']]]),
-						[('id', '=', uid)],
-						schema='users_data'
-					)
-					self.status = djn_def.Fields.status_map['inactive']
-					
-		return self
+		if new_status:
+			if not self.auth_email:
+				request.db.server.update(
+					'users_info',
+					pd.DataFrame(columns=['auth_email'], data=[[True]]),
+					[('uid', '=', self.uid)],
+					schema='users_data'
+				)
+				self.auth_email = True
+			if self.status == djn_def.Fields.status_map['inactive']:
+				request.db.server.update(
+					'account_account',
+					pd.DataFrame(columns=['status'], data=[[djn_def.Fields.status_map['active']]]),
+					[('id', '=', self.uid)],
+					schema='users_data'
+				)
+				self.status = djn_def.Fields.status_map['active']
+		else:
+			if self.auth_email:
+				request.db.server.update(
+					'users_info',
+					pd.DataFrame(columns=['auth_email'], data=[[False]]),
+					[('uid', '=', self.uid)],
+					schema='users_data'
+				)
+				self.auth_email = False
+			if self.status == djn_def.Fields.status_map['active']:
+				request.db.server.update(
+					'account_account',
+					pd.DataFrame(columns=['status'], data=[[djn_def.Fields.status_map['inactive']]]),
+					[('id', '=', self.uid)],
+					schema='users_data'
+				)
+				self.status = djn_def.Fields.status_map['inactive']
 	
-	def signup(self, request, email: str, password: str, **kwargs):
+	def signup(self, request, email: str, password: str, auto_login: bool = False):
 		"""
 		UpdatedAt: ---
 
 		About:
 		-----
-		check email regex
-		check password regex
-		check email conflict
-		after checking were successful sign user up and update `User` object in request
+		sign user up and update `self` with new user
 
 		Parameters:
 		-----
 		request: CustomRequest
 		email: str
 		password: str
-		**kwargs: dict optional
-			auto_login: bool, default: False
-				log user in after successful signup
+		auto_login: bool, default: False
+			log user in after successful signup
 
 		Response:
 		-----
@@ -587,8 +558,6 @@ class CustomUser:
 			| comment: ---
 			| Message: UTILSD.Defaults.Messages.ok
 			| Result: null
-		else:
-			self
 
 		Django Errors:
 		-----
@@ -605,30 +574,30 @@ class CustomUser:
 		unexpected:
 			| ---
 		"""
-		check_regex(request, password, 'password')
 		check_regex(request, email, 'email')
-		auto_login = kwargs.pop('auto_login', False)
+		check_regex(request, password, 'password')
 		
 		request.db.server.schema = 'users_data'
-		_data = request.db.server.read(
-			'account_account',
-			['id', 'status'],
-			[('email', '=', email)]
-		).values.tolist()
 		
-		if _data:
-			self.uid, _status = _data[0]
-			if _status == djn_def.Fields.status_map['inactive']:
+		# existing_user checks
+		try:
+			existing_user = request.db.server.read(
+				'account_account',
+				['id', 'status'],
+				[('email', '=', email)]
+			).to_dict('records')[0]
+			self.uid = existing_user['id']
+			if existing_user['status'] == djn_def.Fields.status_map['inactive']:
 				if auto_login:
 					Token(request).regenerate()
 				
+				# update user with new data
 				request.db.server.update(
 					'account_account',
 					pd.DataFrame([[make_password(password)]], columns=['password']),
 					[('id', '=', self.uid)],
 					schema='users_data'
 				)
-				request.input_body['password'] = '****'
 				
 				self.info(request, {'template': 'info'})
 				return d_response(
@@ -643,10 +612,14 @@ class CustomUser:
 				f'{email} uid -> {self.uid}',
 				code=409
 			)
+		except IndexError:
+			# user does not exist and we are good to go
+			pass
+		
+		# create user
 		try:
 			acc = get_user_model()(email=email, username=gen_random_username(request.db.server))
 			acc.set_password(password)
-			request.input_body['password'] = '****'
 			acc.save()
 			self.uid = acc.id
 		except Exception as e:
@@ -654,20 +627,19 @@ class CustomUser:
 				request,
 				djn_def.Messages.already_exists,
 				e,
-				exc_comment=f'{email} uid -> {self.uid} {djn_def.Messages.unexpected}',
+				exc_comment=f'{email} uid -> {self.uid} {djn_def.Messages.must_not_happen}',
 				code=409
 			)
 			return  # just for ide warnings
 		
+		# create user`s related records accross other tables
 		request.db.server.insert('users_info', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
 		
 		if auto_login:
 			Token(request).create()
 		self.info(request, {'template': 'info'})
-		
-		return self
 	
-	def login(self, request, username: str, password: str, **kwargs):
+	def login(self, request, username: str, password: str, treat_as: str = None):
 		"""
 		UpdatedAt: ---
 
@@ -680,9 +652,8 @@ class CustomUser:
 		request: CustomRequest
 		username: str
 		password: str
-		**kwargs: dict optional
-			treat_as: str, default: None
-				treat `username` as what (username or email)
+		treat_as: str, default: None
+			treat `username` as what (username or email)
 
 		Django Errors:
 		-----
@@ -698,12 +669,12 @@ class CustomUser:
 			| Result: null
 			| ----------------------------------------------------
 			| status: 403
-			| comment: inactive user
+			| comment: ---
 			| Message: UTILSD.Defaults.Messages.inactive_user
 			| Result: null
 			| ---------------------------------------------------------------
 			| status: 403
-			| comment: suspended user
+			| comment: ---
 			| Message: UTILSD.Defaults.Messages.suspended_user
 			| Result: null
 			| ---------------------------------------------------------------
@@ -714,7 +685,6 @@ class CustomUser:
 		unexpected:
 			| ---
 		"""
-		treat_as = kwargs.pop('treat_as', None)
 		request.db.server.schema = 'users_data'
 		user = None
 		
@@ -726,7 +696,7 @@ class CustomUser:
 				'account_account',
 				['id', 'password', 'status'],
 				[('username', '=', username)]
-			).values.tolist()
+			).to_dict('records')
 		
 		if not user and (not treat_as or treat_as == 'email') and check_regex(
 				request, username, 'email',
@@ -736,7 +706,7 @@ class CustomUser:
 				'account_account',
 				['id', 'password', 'status'],
 				[('email', '=', username)]
-			).values.tolist()
+			).to_dict('records')
 		
 		if not user:
 			d_raise(
@@ -746,44 +716,45 @@ class CustomUser:
 				code=404
 			)
 			return  # just for ide warnings
-		uid, ok_password, status = user[0]
+		user = user[0]
+		self.uid = user['id']
+		self.status = user['status']
 		
-		if not check_password(password, ok_password):
+		if not check_password(password, user['password']):
 			d_raise(
 				request,
 				djn_def.Messages.account_not_found,
 				f'login attempt `{username}` `{password}` (bad password)',
 				code=404
 			)
-		request.input_body['password'] = '****'
 		
-		request.User.status = status
-		if request.User.status != djn_def.Fields.status_map['active']:
-			if request.User.status == djn_def.Fields.status_map['inactive']:
-				d_raise(
-					request,
-					djn_def.Messages.inactive_user,
-					f'user is {request.User.status}',
-					code=403,
-				)
-			else:
-				d_raise(
-					request,
-					djn_def.Messages.suspended_user,
-					f'user is {request.User.status}',
-					code=403,
-				)
+		if self.status == djn_def.Fields.status_map['inactive']:
+			d_raise(
+				request,
+				djn_def.Messages.inactive_user,
+				code=403,
+			)
+		elif self.status == djn_def.Fields.status_map['suspended']:
+			d_raise(
+				request,
+				djn_def.Messages.suspended_user,
+				code=403,
+			)
+		elif self.status != djn_def.Fields.status_map['active']:
+			d_raise(
+				request,
+				djn_def.Messages.inactive_user,
+				f'user is not active {djn_def.Messages.must_not_happen}',
+				code=403,
+			)
 		
-		self.uid = uid
 		Token(request).regenerate()
 		request.db.server.update(
 			'account_account',
 			pd.DataFrame(columns=['last_login'], data=[["timezone('utc', now())"]]),
-			[('id', '=', uid)]
+			[('id', '=', self.uid)]
 		)
 		self.info(request, {'template': 'info'})
-		
-		return self
 	
 	def upgrade(self, request):
 		pass
@@ -849,9 +820,6 @@ class CustomException(exceptions.APIException):
 
 class Token:
 	def __init__(self, request: CustomRequest):
-		"""
-		`platform` can be: app, web
-		"""
 		self.request = request
 	
 	class DoesNotExist(BaseException):
@@ -899,17 +867,19 @@ class Token:
 			schema='users_data'
 		)
 	
-	def is_expired(self) -> ty.Optional[bool]:
+	def is_expired(self) -> bool:
 		uid = self._check_user()
-		_q = f"""
-		select extract(epoch from '{self.request.start}' - created) > {self.request.info.token_expiration_in_seconds} x
-		from users_data."users_token_{self.request.info.platform}"
-		where uid = {uid}
-		"""
-		res = self.request.db.server.custom(_q, None, to_commit=False, to_fetch=True)
-		if res.empty:
-			return
-		return res.values[0][0]
+		return self.request.db.server.exists(
+			f'users_token_{self.request.info.platform}',
+			[
+				('uid', '=', uid),
+				(
+					f'extract(epoch from {self.request.start} - created)',
+					'>', self.request.info.token_expiration_in_seconds
+				)
+			],
+			schema='users_data'
+		)
 	
 	def get_or_create(self) -> dict:
 		""" insert, read """
@@ -934,16 +904,15 @@ class Token:
 		return res
 	
 	def get(self, **kwargs) -> dict:
-		res = self.request.db.server.read(
-			f'users_token_{self.request.info.platform}',
-			['token', 'created', 'uid'],
-			[(k, '=', v) for k, v in kwargs.items()],
-			schema='users_data'
-		).to_dict('records')
-		if not res:
+		try:
+			return self.request.db.server.read(
+				f'users_token_{self.request.info.platform}',
+				['token', 'created', 'uid'],
+				[(k, '=', v) for k, v in kwargs.items()],
+				schema='users_data'
+			).to_dict('records')[0]
+		except:
 			raise self.DoesNotExist
-		
-		return res[0]
 	
 	def create(self) -> dict:
 		return self.get_or_create()
@@ -1448,7 +1417,7 @@ class MainMiddleware:
 				request.META.update(to_update)
 			elif request.info.platform == djn_def.Platforms.test:
 				request.headers.update({'token': request.headers.get('HTTP_AUTHENTICATION', None)})
-				
+			
 			return request
 		
 		@staticmethod
@@ -1687,16 +1656,7 @@ class MainMiddleware:
 		main:
 			| ---
 		links:
-			| UTILSD.main.MainMiddleware.utils.handle_resolver_match
-			| UTILSD.main.MainMiddleware.utils.convert_request_wsgi_to_drf
-			| UTILSD.main.MainMiddleware.utils.fill_request_params
-			| UTILSD.main.MainMiddleware.utils.handler404
-			| UTILSD.main.MainMiddleware.utils.ban_bad_requests
-			| UTILSD.main.MainMiddleware.utils.check_input_model
-			| UTILSD.main.MainMiddleware.utils.check_platform_required_data
-			| UTILSD.main.MainMiddleware.utils.check_user_if_required
-			| UTILSD.main.MainMiddleware.utils.check_active_user_if_detected
-			| UTILSD.main.MainMiddleware.utils.check_api_input_data
+			| UTILSD.main.MainMiddleware.utils. ** all functions **
 		possible attack:
 			| ---
 		unexpected:
@@ -2429,7 +2389,8 @@ def _d_main_return(
 				data = {}
 		
 		with open(f'{prj_def.project_root}/templates/{template}', 'r', encoding='utf-8') as f:
-			res = SimpleTemplateResponse('main.html', {'myhtml': f.read().format(**data)}, status=code)
+			res = SimpleTemplateResponse('main.html', {'myhtml': f.read().format(**data), **data}, status=code)
+			res.template_address = template
 			res.render()
 	else:
 		res = HttpResponse('', status=code)
@@ -2581,6 +2542,7 @@ def gen_random_username(db: Psql) -> str:
 	while db.exists('account_account', [('username', '=', name)], schema='users_data'):
 		name = f'polygon_{String.gen_random_with_timestamp()}'
 	return name
+
 
 # endregion
 

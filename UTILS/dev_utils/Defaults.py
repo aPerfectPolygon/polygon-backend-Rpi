@@ -18,6 +18,12 @@ def get_ip():
 	return detected_ip
 
 
+class Languages:
+	fa = 'fa'
+	en = 'en'
+	all = [fa, en]
+
+
 name = 'enz'
 mobile = '+989196864660'
 email = 'elyasnz.1999@gmail.com'

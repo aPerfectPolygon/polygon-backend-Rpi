@@ -1,3 +1,5 @@
+# noinspection PyProtectedMember
+
 import configparser
 import os
 import typing as ty
@@ -813,7 +815,7 @@ class Psql:
 		
 		table = self._handle_table_name(table)
 		
-		_q = f'drop table if exists {schema}.{table}'
+		_q = f'drop table if exists {schema}.{table} cascade'
 		_p = None
 		
 		try:

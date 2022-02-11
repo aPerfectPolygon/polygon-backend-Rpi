@@ -24,7 +24,7 @@ def dt2ts(t: dt.datetime, as_tz: str = 'gmt'):
 	""" if `t` does not have timezone consider it at GMT """
 	if t.tzinfo is None:
 		t = t.replace(tzinfo=pytz.timezone(_get_tz(as_tz)))
-	return t
+	return t.timestamp()
 
 
 def dtnow(tz: str = 'local', remove_tz=False) -> dt.datetime:

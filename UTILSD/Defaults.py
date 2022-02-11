@@ -72,7 +72,7 @@ class Fields:
 	}
 	regex_map = {
 		'username': _r(
-			"^(?=.{5,20}$)(?![_.])(?!Candle_)(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$",  # signup/edit-profile regex
+			"^(?=.{5,20}$)(?![_.])(?!Polygon_)(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$",  # signup/edit-profile regex
 			'not standard',
 			regex2="^(?=.{5,20}$)(?![_.])(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$"  # login regex
 		),
@@ -111,45 +111,11 @@ templates = {
 }
 links = {}
 
-indicators = {
-	'sbi': [
-		'rsi',
-		'stochastic',
-		'cci',
-		'bbands',
-		'sma',
-		'adx',
-		'ichimoku',
-		'macd',
-		'ema',
-		'psar'
-	],
-	'moi': [
-		'candlestick_pattern',
-		'harmonic_pattern',
-		'trend',
-		'fibonacci',
-		'elliott_wave'
-	]
-}
-indicators.update({'all': indicators['sbi'] + indicators['moi']})
-
-allowed_hosts = ['127.0.0.1', 'localhost', '195.110.38.214', '212.33.206.19']
+allowed_hosts = ['127.0.0.1', 'localhost']
 if prj_def.ip not in allowed_hosts:
 	allowed_hosts.append(prj_def.ip)
 
-descriptions_api_based = {
-	'User_update': {
-		'type': 'message',
-		Messages.ok: 'بروزرسانی حساب کاربری شما با موفقیت انجام شد',
-		Messages.regex_error: 'اطلاعات وارد شده در فیلد `{}` اشتباه میباشد'
-	},
-	'User_SignupSeries_signup': {
-		'type': 'message',
-		Messages.ok: 'کد قعال سازی با موفقیت ارسال شد',
-		Messages.already_exists: 'حساب کاربری قبلا ایجاد شده، لطفا وارد شوید'
-	},
-}
+descriptions_api_based = {}
 descriptions_message_based = {}
 descriptions_user_info_field_translator = {
 	'username': {

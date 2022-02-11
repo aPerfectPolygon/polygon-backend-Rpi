@@ -1,3 +1,5 @@
+from django.http import HttpResponse
+
 from UTILSD import Defaults as djn_def
 from UTILSD import main as djn_utils, Tokens
 
@@ -53,11 +55,12 @@ def signup(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 	"""
 	email = request.input_body['email']
 	password = request.input_body['password']
+	request.input_body['password'] = '****'
 	
 	res = request.User.signup(request, email, password, auto_login=True)
 	request = Tokens.Email.send(request, email)
 	
-	if not isinstance(res, djn_utils.CustomUser):
+	if isinstance(res, HttpResponse):
 		# user was previously created buy not activated (sent token again)
 		return res
 	

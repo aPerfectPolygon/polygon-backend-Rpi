@@ -14,9 +14,17 @@ from UTILSD import Defaults as djn_def
 from UTILSD import main as djn_utils
 
 
+def _gen_token(token):
+	if not token:
+		token = str(Int.gen_random(5))
+	return token
+
+
 class Email:
+	token_expire_in_minutes = 30
+	
 	@staticmethod
-	def send(request: djn_utils.CustomRequest, email: str, **kwargs) -> djn_utils.CustomRequest:
+	def send(request: djn_utils.CustomRequest, email: str, token: str = None) -> djn_utils.CustomRequest:
 		"""
 		UpdatedAt: ---
 
@@ -26,15 +34,14 @@ class Email:
 
 		Params:
 		-----
-		**kwargs:
-			token: str, default: None
-				to send this token except auto-generated token
+		token: str, default: None
+			to send this token except auto-generated token
 
 		Django Errors:
 		-----
 		main:
 			| status: 404
-			| comment: no user found  (not raised)
+			| comment: (not raised)
 			| Message: UTILSD.Defaults.Messages.account_not_found
 			| Result: null
 			| ----------------------------------------------------
@@ -43,60 +50,51 @@ class Email:
 			| Message: UTILSD.Defaults.Messages.already_verified
 			| Result: null
 			| ----------------------------------------------------
-			| status: 403
-			| comment: suspended user
-			| Message: UTILSD.Defaults.Messages.suspended_user
-			| Result: null
-			| ----------------------------------------------------
 		links:
 			| UTILSD.main.check_regex
+			| UTILSD.main.CustomUser.authenticate_email
 		possible attack:
 			| ---
 		unexpected:
 			| ---
 		"""
 		djn_utils.check_regex(request, email, 'email')
-		
 		request.db.server.schema = 'users_data'
-		user = list(request.db.server.read(
+		
+		# region find user
+		user = request.db.server.read(
 			'account_account',
 			['main_table.id', 'auth_email', 'status'],
 			[('email', '=', email)],
 			[('inner', 'users_data.users_info', 'info', 'main_table.id', '=', 'info.uid')]
-		).values)
+		).values.tolist()
 		if not user:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.account_not_found,
-				f'no user found with email `{email}` (not raised)',
+				f'email `{email}` (not raised)',
 				code=404,
 				do_raise=False
 			)
 			return request
 		
-		request.User.uid, request.User.auth_email, request.User.status = user[0]
 		request.User.email = email
-		user = request.User
+		request.User.uid, request.User.auth_email, request.User.status = user[0]
+		
+		# endregion
 		
 		if request.User.auth_email:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.already_verified,
-				f'{email} user({user.uid})',
+				f'email {email}',
 				code=409
-			)
-		if request.User.status == djn_def.Fields.status_map['suspended']:
-			djn_utils.d_raise(
-				request,
-				djn_def.Messages.suspended_user,
-				f'user is {request.User.status}',
-				code=403,
 			)
 		
 		request.User.authenticate_email(request, new_status=False)
-		token = kwargs.pop('token', Int.gen_random(5))
+		token = _gen_token(token)
 		
-		request.db.server.delete('tokens_email', [('uid', '=', user.uid)])
+		# request.db.server.delete('tokens_email', [('uid', '=', user.uid)])
 		request.db.server.insert('tokens_email', pd.DataFrame(columns=['uid', 'token'], data=[[user.uid, token]]))
 		engines.Email.send(
 			user.email,
@@ -111,6 +109,7 @@ class Email:
 	def verify(request: djn_utils.CustomRequest, email: str, token: str) -> djn_utils.CustomRequest:
 		"""
 		UpdatedAt: ---
+
 		About:
 		-----
 		verify the `token` for `email`
@@ -118,11 +117,6 @@ class Email:
 		Django Errors:
 		-----
 		main:
-			| status: 404
-			| comment: no user found  (unrelated message) (client must treat this error as `no_token` error)
-			| Message: UTILSD.Defaults.Messages.no_token
-			| Result: null
-			| ----------------------------------------------------
 			| status: 409
 			| comment: ---
 			| Message: UTILSD.Defaults.Messages.already_verified
@@ -143,67 +137,58 @@ class Email:
 			| Message: UTILSD.Defaults.Messages.token_expired
 			| Result: null
 			| ----------------------------------------------------
-			| status: 403
-			| comment: suspended user
-			| Message: UTILSD.Defaults.Messages.suspended_user
-			| Result: null
-			| ----------------------------------------------------
 		links:
 			| UTILSD.main.check_regex
+			| UTILSD.main.CustomUser.authenticate_email
 		possible attack:
-			| ---
+			| status: 404
+			| comment: no user found  (unrelated message) (client must treat this error as `no_token` error)
+			| Message: UTILSD.Defaults.Messages.no_token
+			| Result: null
+			| ----------------------------------------------------
 		unexpected:
 			| ---
 		"""
-		expire_hours = 24
 		djn_utils.check_regex(request, email, 'email')
 		request.db.server.schema = 'users_data'
-		user = list(request.db.server.read(
+		
+		# region find user
+		user = request.db.server.read(
 			'account_account',
 			['id'],
 			[('email', '=', email)],
-		).id.values)
+		).id.values.tolist()
 		if not user:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.no_token,
-				f'no user found with email `{email}` (unrelated message)',
+				f'no user found with email `{email}` (unrelated message) {djn_def.Messages.possible_attack}',
 				code=404,
 			)
 		
 		request.User.uid = int(user[0])
 		request.User.info(request, {'template': 'info'})
-		user = request.User
+		# endregion
 		
-		if request.User.status == djn_def.Fields.status_map['suspended']:
-			djn_utils.d_raise(
-				request,
-				djn_def.Messages.suspended_user,
-				f'user is {request.User.status}',
-				code=403,
-			)
-		
-		if user.auth_email:
+		if request.User.auth_email:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.already_verified,
-				f'{email} user({user.uid})',
+				f'{email}',
 				code=409
 			)
 		
-		data = list(request.db.server.read(
+		# region find token and check it
+		data = request.db.server.read(
 			'tokens_email',
 			['created', 'is_used'],
-			[
-				('uid', '=', user.uid),
-				('token', '=', token),
-			]
-		).values)
+			[('uid', '=', request.User.uid), ('token', '=', token)]
+		).values.tolist()
 		if not data:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.no_token,
-				f'sms token({token}) not found for user({user.uid})',
+				f'email token({token}) not found for user',
 				code=404
 			)
 		created, is_used = data[0]
@@ -211,25 +196,23 @@ class Email:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.already_used,
-				f'sms token({token}) is already used by user({user.uid}) himself',
+				f'email token({token}) is already used by user himself',
 				code=409
 			)
-		if Time.ParseTimeDelta(request.start - created).hours > expire_hours:
+		if Time.ParseTimeDelta(request.start - created).minutes > Email.token_expire_in_minutes:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.token_expired,
-				f'sms token({token}) for user({user.uid}) is older than {expire_hours} hours',
+				f'email token({token}) for user is older than {Email.token_expire_in_minutes} minutes',
 			)
+		# endregion
 		
+		request.User.authenticate_email(request)
 		request.db.server.update(
 			'tokens_email',
 			pd.DataFrame(columns=['is_used'], data=[[True]]),
-			[
-				('uid', '=', user.uid),
-				('token', '=', token),
-			]
+			[('uid', '=', user.uid), ('token', '=', token)]
 		)
-		request.User.authenticate_email(request)
 		
 		engines.Email.send(
 			user.email,
@@ -242,8 +225,11 @@ class Email:
 
 
 class ForgetPassword:
+	token_expire_in_minutes = 3
+	token_use_expire_in_minutes = 60
+	
 	@staticmethod
-	def send(request: djn_utils.CustomRequest, email: str, **kwargs) -> djn_utils.CustomRequest:
+	def send(request: djn_utils.CustomRequest, email: str, token: str = None) -> djn_utils.CustomRequest:
 		"""
 		UpdatedAt: ---
 
@@ -253,20 +239,19 @@ class ForgetPassword:
 
 		Params:
 		-----
-		**kwargs:
-			token: str, default: None
-				to send this `token` except `auto-generated token`
+		token: str, default: None
+			to send this `token` except `auto-generated token`
 
 		Django Errors:
 		-----
 		main:
 			| status: 404
-			| comment: no user found  (not raised)
+			| comment: (not raised)
 			| Message: UTILSD.Defaults.Messages.account_not_found
 			| Result: null
 			| ----------------------------------------------------
 			| status: 403
-			| comment: suspended user
+			| comment: ---
 			| Message: UTILSD.Defaults.Messages.suspended_user
 			| Result: null
 			| ----------------------------------------------------
@@ -278,41 +263,38 @@ class ForgetPassword:
 			| ---
 		"""
 		djn_utils.check_regex(request, email, 'email')
-		
 		request.db.server.schema = 'users_data'
-		uid = list(request.db.server.read(
+		
+		# region find user
+		uid = request.db.server.read(
 			'account_account',
 			['id', 'status'],
 			[('email', '=', email)]
-		).values)
+		).values.tolist()
 		if not uid:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.account_not_found,
-				f'no user found with email `{email}` (not raised)',
+				f'email `{email}` (not raised)',
 				code=404,
 				do_raise=False
 			)
 			return request
-		request.User.uid, request.User.status = uid[0]
+		
 		request.User.email = email
-		user = request.User
+		request.User.uid, request.User.status = uid[0]
 		
 		if request.User.status == djn_def.Fields.status_map['suspended']:
-			djn_utils.d_raise(
-				request,
-				djn_def.Messages.suspended_user,
-				f'user is {request.User.status}',
-				code=403,
-			)
+			djn_utils.d_raise(request, djn_def.Messages.suspended_user, code=403)
+		# endregion
 		
-		token = kwargs.pop('token', Int.gen_random(5))
-		
-		request.db.server.delete('tokens_forget_pass', [('uid', '=', user.uid)])
-		request.db.server.insert('tokens_forget_pass', pd.DataFrame(columns=['uid', 'token'], data=[[user.uid, token]]))
+		token = _gen_token(token)
+		# request.db.delete('tokens_forget_pass', [('uid', '=', user.uid)])
+		request.db.server.insert(
+			'tokens_forget_pass', pd.DataFrame(columns=['uid', 'token'], data=[[request.User.uid, token]]))
 		
 		engines.Email.send(
-			user.email,
+			request.User.email,
 			'Forget Password Verification',
 			template=djn_def.templates['email']['forgetPasswordSeries']['to_change'],
 			template_content={'token': token}
@@ -333,11 +315,6 @@ class ForgetPassword:
 		-----
 		main:
 			| status: 404
-			| comment: no user found  (unrelated message) (client must treat this error as `no_token` error)
-			| Message: UTILSD.Defaults.Messages.no_token
-			| Result: null
-			| ----------------------------------------------------
-			| status: 404
 			| comment: token not found for user
 			| Message: UTILSD.Defaults.Messages.no_token
 			| Result: null
@@ -348,7 +325,7 @@ class ForgetPassword:
 			| Result: null
 			| ----------------------------------------------------
 			| status: 409
-			| comment: ---
+			| comment: token already verified by user himself
 			| Message: UTILSD.Defaults.Messages.already_verified
 			| Result: null
 			| ----------------------------------------------------
@@ -357,59 +334,50 @@ class ForgetPassword:
 			| Message: UTILSD.Defaults.Messages.token_expired
 			| Result: null
 			| ----------------------------------------------------
-			| status: 403
-			| comment: suspended user
-			| Message: UTILSD.Defaults.Messages.suspended_user
-			| Result: null
-			| ----------------------------------------------------
 		links:
 			| UTILSD.main.check_regex
+			| UTILSD.main.CustomUser.authenticate_email
 		possible attack:
-			| ---
+			| status: 404
+			| comment: no user found  (unrelated message) (client must treat this error as `no_token` error)
+			| Message: UTILSD.Defaults.Messages.no_token
+			| Result: null
+			| ----------------------------------------------------
 		unexpected:
 			| ---
 		"""
-		expire_minutes = 2
 		djn_utils.check_regex(request, email, 'email')
-		
 		request.db.server.schema = 'users_data'
-		uid = list(request.db.server.read(
+		
+		# region find user
+		uid = request.db.server.read(
 			'account_account',
 			['id', 'status'],
 			[('email', '=', email)]
-		).values)
+		).values.tolist()
 		if not uid:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.no_token,
-				f'no user found with email `{email}` (unrelated message)',
+				f'no user found with email `{email}` (unrelated message) {djn_def.Messages.possible_attack}',
 				code=404,
 			)
-		request.User.uid, request.User.status = uid[0]
 		request.User.email = email
-		user = request.User
+		request.User.uid, request.User.status = uid[0]
 		
-		if request.User.status == djn_def.Fields.status_map['suspended']:
-			djn_utils.d_raise(
-				request,
-				djn_def.Messages.suspended_user,
-				f'user is {request.User.status}',
-				code=403,
-			)
+		# endregion
 		
-		data = list(request.db.server.read(
+		# region find token and check it
+		data = request.db.server.read(
 			'tokens_forget_pass',
 			['created', 'is_used', 'is_verified'],
-			[
-				('uid', '=', user.uid),
-				('token', '=', token),
-			]
-		).values)
+			[('uid', '=', request.User.uid), ('token', '=', token)]
+		).values.tolist()
 		if not data:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.no_token,
-				f'forget_pass token({token}) not found for user({user.uid})',
+				f'forget_pass token({token}) not found for user',
 				code=404
 			)
 		created, is_used, is_verified = data[0]
@@ -417,32 +385,30 @@ class ForgetPassword:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.already_used,
-				f'forget_pass token({token}) is already used by user({user.uid}) himself',
+				f'forget_pass token({token}) is already used by user himself',
 				code=409
 			)
 		if is_verified:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.already_verified,
-				f'forget_pass token({token}) is already verified by user({user.uid}) himself',
+				f'forget_pass token({token}) is already verified by user himself',
 				code=409
 			)
-		if Time.ParseTimeDelta(request.start - created).minutes > expire_minutes:
+		if Time.ParseTimeDelta(request.start - created).minutes > ForgetPassword.token_expire_in_minutes:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.token_expired,
-				f'forget_pass token({token}) for user({user.uid}) is older than {expire_minutes} minutes',
+				f'forget_pass token({token}) for user is older than {ForgetPassword.token_expire_in_minutes} minutes',
 			)
+		# endregion
 		
 		# if email is not authenticated, authenticate user email
 		request.User.authenticate_email(request)
 		request.db.server.update(
 			'tokens_forget_pass',
 			pd.DataFrame(columns=['is_verified'], data=[[True]]),
-			[
-				('uid', '=', user.uid),
-				('token', '=', token),
-			]
+			[('uid', '=', request.User.uid), ('token', '=', token)]
 		)
 		
 		return request
@@ -460,23 +426,23 @@ class ForgetPassword:
 		-----
 		main:
 			| status: 400
-			| comment: ---
+			| comment: no forget_pass token found for user in last {expiration_time} minutes
 			| Message: UTILSD.Defaults.Messages.token_expired
+			| Result: null
+			| ----------------------------------------------------
+			| status: 409
+			| comment: no unused forget_pass token found for user
+			| Message: UTILSD.Defaults.Messages.already_used
+			| Result: null
+			| ----------------------------------------------------
+			| status: 403
+			| comment: ---
+			| Message: UTILSD.Defaults.Messages.suspended_user
 			| Result: null
 			| ----------------------------------------------------
 			| status: 400
 			| comment: previous and new password must not match
 			| Message: UTILSD.Defaults.Messages.repetitive_password
-			| Result: null
-			| ----------------------------------------------------
-			| status: 409
-			| comment: token already used by user himself (must do the forget password process again)
-			| Message: UTILSD.Defaults.Messages.already_used
-			| Result: null
-			| ----------------------------------------------------
-			| status: 403
-			| comment: suspended user
-			| Message: UTILSD.Defaults.Messages.suspended_user
 			| Result: null
 			| ----------------------------------------------------
 		links:
@@ -488,106 +454,97 @@ class ForgetPassword:
 			| Result: null
 			| ----------------------------------------------------
 			| status: 400
-			| comment: token not found for user
-			| Message: UTILSD.Defaults.Messages.bad_input
-			| Result: null
-			| ----------------------------------------------------
-			| status: 400
-			| comment: code not verified
+			| comment: ** multiple reasons **
 			| Message: UTILSD.Defaults.Messages.bad_input
 			| Result: null
 			| ----------------------------------------------------
 		unexpected:
 			| ---
 		"""
-		expire_minutes = 60
 		djn_utils.check_regex(request, email, 'email')
 		djn_utils.check_regex(request, password, 'password')
-		
 		request.db.server.schema = 'users_data'
-		user = list(request.db.server.read(
+		
+		# region find user
+		user = request.db.server.read(
 			'account_account',
 			['id', 'password', 'status'],
 			[('email', '=', email)]
-		).values)
+		).values.tolist()
 		if not user:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.bad_input,
 				f'no user found with email `{email}` {djn_def.Messages.possible_attack}',
 			)
-		request.User.uid, request.User.password, request.User.status = user[0]
 		request.User.email = email
-		user = request.User
+		request.User.uid, request.User.password, request.User.status = user[0]
 		
 		if request.User.status == djn_def.Fields.status_map['suspended']:
-			djn_utils.d_raise(
-				request,
-				djn_def.Messages.suspended_user,
-				f'user is {request.User.status}',
-				code=403,
-			)
+			djn_utils.d_raise(request, djn_def.Messages.suspended_user, code=403)
+		# endregion
 		
+		# region find token and check it
 		data = request.db.server.read(
 			'tokens_forget_pass',
 			['id', 'created', 'is_used', 'is_verified'],
-			[('uid', '=', user.uid)],
+			[('uid', '=', request.User.uid)],
 			order_by=['id', 'desc']
 		)
 		if data.empty:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.bad_input,
-				f'no forget_pass token found for user({user.uid}) {djn_def.Messages.possible_attack}',
+				f'no forget_pass token found for user {djn_def.Messages.possible_attack}',
 			)
-		data = data.loc[data.created >= request.start - _dt.timedelta(minutes=expire_minutes)]
+		
+		data = data.loc[
+			data.created >= request.start - _dt.timedelta(minutes=ForgetPassword.token_use_expire_in_minutes)]
 		if data.empty:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.token_expired,
-				f'user({user.uid})\'s last token is older than {expire_minutes} minutes',
+				f'no forget_pass token found for user in last {ForgetPassword.token_use_expire_in_minutes} minutes {djn_def.Messages.possible_attack}',
 			)
 		
-		# must check with `==`
-		data = data.loc[data.is_used == False]
+		data = data.loc[~data.is_used]
 		if data.empty:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.already_used,
-				f'user({user.uid})\'s last token is already used by himself',
+				'no unused forget_pass token found for user',
 				code=409
 			)
-		# must check with `==`
-		data = data.loc[data.is_verified == True]
+		
+		data = data.loc[data.is_verified]
 		if data.empty:
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.bad_input,
-				f'user({user.uid})\'s last token is not verified by himself {djn_def.Messages.possible_attack}',
+				f'no verified forget_pass token found for user {djn_def.Messages.possible_attack}',
 			)
-		data['is_used'] = True
-		data.set_index('id', inplace=True)
 		
-		if check_password(password, user.password):
+		# endregion
+		
+		if check_password(password, request.User.password):
 			djn_utils.d_raise(
 				request,
 				djn_def.Messages.repetitive_password,
-				f'user({user.uid}) previous and new password can\'t match',
+				f'previous and new password can`t match',
 			)
 		
+		# update password
 		acc = get_user_model().objects.filter(email=email)[0]
 		acc.set_password(password)
 		acc.save()
 		
-		request.db.server.multiple_update(
-			'tokens_forget_pass',
-			data[['is_used']]
-		)
+		data['is_used'] = True
+		data.set_index('id', inplace=True)
+		request.db.server.multiple_update('tokens_forget_pass', data[['is_used']])
 		
 		engines.Email.send(
 			user.email,
 			'Password Changed',
 			template=djn_def.templates['email']['forgetPasswordSeries']['changed'],
 		)
-		request.input_body.update({'password': '******'})
 		return request
