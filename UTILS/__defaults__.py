@@ -27,7 +27,7 @@ platform = pla.system()
 is_server = os.path.exists('/is_server')
 is_test_server = os.path.exists('/is_test_server')
 ip = get_ip()
-project_root = Path(__file__).parent.parent.parent.absolute()
+project_root = Path(__file__).parent.parent.absolute()
 
 proxies = {
 	'http': 'http://aozijqzx-rotate:1lqmg4uww14f@p.webshare.io:80',

@@ -874,7 +874,7 @@ class Token:
 			[
 				('uid', '=', uid),
 				(
-					f'extract(epoch from {self.request.start} - created)',
+					f"extract(epoch from '{self.request.start}' - created)",
 					'>', self.request.info.token_expiration_in_seconds
 				)
 			],

@@ -94,10 +94,10 @@ class Email:
 		request.User.authenticate_email(request, new_status=False)
 		token = _gen_token(token)
 		
-		# request.db.server.delete('tokens_email', [('uid', '=', user.uid)])
-		request.db.server.insert('tokens_email', pd.DataFrame(columns=['uid', 'token'], data=[[user.uid, token]]))
+		# request.db.server.delete('tokens_email', [('uid', '=', request.User.uid)])
+		request.db.server.insert('tokens_email', pd.DataFrame(columns=['uid', 'token'], data=[[request.User.uid, token]]))
 		engines.Email.send(
-			user.email,
+			request.User.email,
 			'Activation',
 			template=djn_def.templates['email']['signupSeries']['signup'],
 			template_content={'token': token}
@@ -211,14 +211,14 @@ class Email:
 		request.db.server.update(
 			'tokens_email',
 			pd.DataFrame(columns=['is_used'], data=[[True]]),
-			[('uid', '=', user.uid), ('token', '=', token)]
+			[('uid', '=', request.User.uid), ('token', '=', token)]
 		)
 		
 		engines.Email.send(
-			user.email,
+			request.User.email,
 			'Welcome',
 			template=djn_def.templates['email']['signupSeries']['welcome'],
-			template_content={'username': user.username}
+			template_content={'username': request.User.username}
 		)
 		
 		return request
@@ -289,7 +289,7 @@ class ForgetPassword:
 		# endregion
 		
 		token = _gen_token(token)
-		# request.db.delete('tokens_forget_pass', [('uid', '=', user.uid)])
+		# request.db.delete('tokens_forget_pass', [('uid', '=', request.User.uid)])
 		request.db.server.insert(
 			'tokens_forget_pass', pd.DataFrame(columns=['uid', 'token'], data=[[request.User.uid, token]]))
 		
@@ -543,7 +543,7 @@ class ForgetPassword:
 		request.db.server.multiple_update('tokens_forget_pass', data[['is_used']])
 		
 		engines.Email.send(
-			user.email,
+			request.User.email,
 			'Password Changed',
 			template=djn_def.templates['email']['forgetPasswordSeries']['changed'],
 		)

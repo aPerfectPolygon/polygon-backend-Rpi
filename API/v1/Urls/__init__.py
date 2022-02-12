@@ -62,6 +62,47 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 		),
 		# endregion
 		
+		base_info.path_generator(
+			'User/login',
+			v.User.login,
+			input_body_required={
+				'username': [str],
+				'password': [str]
+			}
+		),
+		
+		base_info.path_generator(
+			'User/resign',
+			v.User.resign,
+			token_required=True,
+			user_must_be_active=True,
+			user_fields_needed={'template': 'info'}
+		),
+		
+		base_info.path_generator(
+			'User/info',
+			v.User.info_,
+			token_required=True,
+			user_fields_needed={'template': 'info'}
+		),
+		
+		base_info.path_generator(
+			'User/change_password',
+			v.User.change_password,
+			token_required=True,
+			user_must_be_active=True,
+			user_fields_needed={'main': ['password', 'email']},
+			input_body_required={
+				'old_password': [str],
+				'new_password': [str]
+			}
+		),
+		base_info.path_generator(
+			'User/logout',
+			v.User.logout,
+			token_required=True,
+		),
+		
 		# endregion
 	]
 

@@ -29,9 +29,12 @@ class Messages:
 	token_expired = '[TOKEN EXPIRED]'
 	account_not_found = '[ACCOUNT NOT FOUND]'
 	referral_not_found = '[REFERRAL NOT FOUND]'
-	repetitive_password = '[REPETITIVE_PASSWORD]'
 	not_available = '[NOT AVAILABLE]'
+	# endregion
 	
+	# region change password
+	bad_old_password = '[BAD OLD PASSWORD]'
+	repetitive_password = '[REPETITIVE_PASSWORD]'
 	# endregion
 	
 	pass
