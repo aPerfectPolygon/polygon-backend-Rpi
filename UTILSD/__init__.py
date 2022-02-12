@@ -2,7 +2,7 @@ def configure_django_with_project_settings():
 	from django.conf import settings as django_settings
 
 	if not django_settings.configured:
-		import Web.settings as project_settings
+		import Rpi.settings as project_settings
 		from django.conf import global_settings
 		from django import setup
 

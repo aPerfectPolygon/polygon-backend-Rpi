@@ -2,14 +2,27 @@ import os
 import pathlib
 import sys
 
+sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
+
+from UTILS import dev_utils
 from UTILS.dev_utils import Log
 from UTILS.prj_utils import Defaults as prj_def
 import pandas as pd
 
-sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent.parent.parent))
-
 from UTILS.dev_utils.Database.Psql.main import Psql
 from UTILS.prj_utils.FirstSetup import git_puller, sync_venv
+
+
+def supervisor_config():
+	dev_utils.supervisor_create_or_restart_service(
+		'PolygonApi',
+		'PolygonApi',
+		'root',
+		f'sh {prj_def.project_root}/run/api/gunicorn/service.bash',
+		prj_def.project_root,
+		f'{prj_def.project_root}/Logs/IRFX-Api/log.log',
+		f'{prj_def.project_root}/Logs/IRFX-Api/log.log',
+	)
 
 
 def server_first_setup():
@@ -21,7 +34,7 @@ def server_first_setup():
 		if db.conn is None:
 			Log.log('cant create Database')
 			return
-		
+	
 	# region constants
 	db.schema = 'constants'
 	db.create_schema()
@@ -179,7 +192,7 @@ def server_first_setup():
 			},
 			ts_columns=['created', 'modified']
 		)
-		
+	
 	# endregion
 	
 	db.close()
@@ -187,6 +200,8 @@ def server_first_setup():
 
 if __name__ == '__main__':
 	args = sys.argv
+	if 'Supervisor' in args:
+		supervisor_config()
 	if 'VenvSync' in args:
 		sync_venv.sync()
 	if 'GitPull' in args:
