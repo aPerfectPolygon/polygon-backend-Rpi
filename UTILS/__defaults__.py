@@ -18,8 +18,8 @@ def get_ip():
 
 
 class Languages:
-	fa = 'fa'
-	en = 'en'
+	fa = 'fa-ir'
+	en = 'en-us'
 	all = [fa, en]
 
 
