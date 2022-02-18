@@ -1,5 +1,3 @@
-# noinspection PyProtectedMember
-
 import configparser
 import os
 import typing as ty

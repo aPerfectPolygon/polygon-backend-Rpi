@@ -1,0 +1,1 @@
+ssh root@rpi3 "cd SmartPolygon/Project/Rpi && sh FR.bash"
