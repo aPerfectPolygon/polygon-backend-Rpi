@@ -115,11 +115,11 @@ class WebSocket(sck_utils.BasicSocket):
 		
 		return True
 	
-	async def close(self):
+	async def close(self, code=1000):
 		"""
 		Close the connection if it's not already closed
 		"""
-		await self.ws.close()
+		await self.ws.close(code)
 
 
 def serve(ip: str, port: int, callback: ty.Callable, **kwargs):

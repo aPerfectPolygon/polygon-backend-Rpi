@@ -20,6 +20,12 @@ class Tracking:
 		self.items_trackers = {item: [] for item in items}
 		self.trackers_items = {}
 	
+	def get_trackers(self, items: list):
+		return Dict.multiselect(self.items_trackers, items)
+	
+	def add_trackers(self, items: list):
+		self.items_trackers.update({item: [] for item in items if item not in self.items_trackers})
+	
 	def untrack_all(self, tracker):
 		if tracker not in self.trackers_items:
 			return
@@ -27,8 +33,18 @@ class Tracking:
 			self.items_trackers[item].remove(tracker)
 		self.trackers_items[tracker] = []
 	
-	def get_trackers(self, items: list):
-		return Dict.multiselect(self.items_trackers, items)
+	def tracker_untrack(self, tracker, items):
+		if tracker not in self.trackers_items:
+			return
+		for item in items:
+			try:
+				self.trackers_items[tracker].remove(item)
+			except:
+				pass
+			try:
+				self.items_trackers[item].remove(tracker)
+			except:
+				pass
 	
 	def tracker_track(self, tracker, items):
 		self.untrack_all(tracker)

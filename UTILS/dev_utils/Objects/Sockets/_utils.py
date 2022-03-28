@@ -141,5 +141,5 @@ class BasicSocket:
 	async def receive(self, timeout: ty.Union[float, int] = None, **kwargs) -> str:
 		raise NotImplementedError
 	
-	async def close(self):
+	async def close(self, code=1000):
 		raise NotImplementedError

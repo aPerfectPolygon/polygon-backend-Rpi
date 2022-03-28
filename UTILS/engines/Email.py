@@ -1,10 +1,11 @@
+import typing as ty
+
 from UTILS import Cache
 from UTILS.engines.__base__ import Email
-import typing as ty
 
 
 def send(
-		receivers: ty.List[str],
+		receivers: ty.Union[ty.List[str], str],
 		subject: str,
 		body: str = None,
 		files: ty.List[str] = None,
@@ -14,8 +15,11 @@ def send(
 		template_content: dict = None,
 		mail_server: str = None,
 ):
+	if not isinstance(receivers, list):
+		receivers = [receivers]
+	
 	if not mail_server:
-		mail_server = 'candle'
+		mail_server = 'polygon'
 		if 'log' in str(subject).lower():
 			mail_server = 'log'
 		elif 'attack' in str(subject).lower():

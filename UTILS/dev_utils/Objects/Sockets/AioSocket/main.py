@@ -186,9 +186,10 @@ class AioSocket(sck_utils.BasicSocket):
 		
 		return True
 	
-	async def close(self):
+	async def close(self, code=None):
 		"""
 		Close the connection if it's not already closed
+		** code parameter is for the `AioSocket` and `WebSocket` to be alike **
 		"""
 		self._queue = []
 		if not self.is_closed:

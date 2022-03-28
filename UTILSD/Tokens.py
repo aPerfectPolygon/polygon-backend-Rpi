@@ -99,7 +99,7 @@ class Email:
 		engines.Email.send(
 			request.User.email,
 			'Activation',
-			template=djn_def.templates['email']['signupSeries']['signup'],
+			template=djn_def.templates['email']['signupSeries']['signup'][request.lang],
 			template_content={'token': token}
 		)
 		
@@ -217,7 +217,7 @@ class Email:
 		engines.Email.send(
 			request.User.email,
 			'Welcome',
-			template=djn_def.templates['email']['signupSeries']['welcome'],
+			template=djn_def.templates['email']['signupSeries']['welcome'][request.lang],
 			template_content={'username': request.User.username}
 		)
 		
@@ -296,7 +296,7 @@ class ForgetPassword:
 		engines.Email.send(
 			request.User.email,
 			'Forget Password Verification',
-			template=djn_def.templates['email']['forgetPasswordSeries']['to_change'],
+			template=djn_def.templates['email']['forgetPasswordSeries']['to_change'][request.lang],
 			template_content={'token': token}
 		)
 		
@@ -545,6 +545,6 @@ class ForgetPassword:
 		engines.Email.send(
 			request.User.email,
 			'Password Changed',
-			template=djn_def.templates['email']['forgetPasswordSeries']['changed'],
+			template=djn_def.templates['email']['forgetPasswordSeries']['changed'][request.lang],
 		)
 		return request

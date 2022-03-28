@@ -8,6 +8,16 @@ from UTILS.dev_utils.Database.Psql import Psql
 import datetime as dt
 from UTILS.prj_utils import Defaults as prj_def
 
+try:
+	__log_emails = Psql('constants').read(
+		'log_emails',
+		['email'],
+		[('is_admin', '=', True)],
+		auto_connection=True
+	).email.values.tolist()
+except:
+	__log_emails = []
+
 
 def log(
 		body: dict = None,
@@ -79,10 +89,9 @@ def log(
 					comment = f'{comment} [FILE UPLOADED] [POSSIBLE ATTACK]'
 				body[k] = v.name
 	
-	if '[POSSIBLE ATTACK]' in str(comment) or '[UNEXPECTED ERROR]' in str(comment):
+	if comment and ('[POSSIBLE ATTACK]' in comment or '[UNEXPECTED ERROR]' in comment or '[UNHANDLED]' in comment):
 		engines.Email.send(
-			Psql('constants').read(
-				'log_emails', ['email'], [('is_admin', '=', True)], auto_connection=True).email.values.tolist(),
+			__log_emails,
 			'[POSSIBLE ATTACK]' if '[POSSIBLE ATTACK]' in str(comment) else '[UNEXPECTED ERROR]',
 			html=markdown.markdown(
 				f"#Main: \n"

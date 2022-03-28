@@ -4,8 +4,6 @@ import os
 from Cryptodome.Cipher import AES
 from py3rijndael import RijndaelCbc
 
-from UTILS.dev_utils.Objects import String
-
 
 class customPadder:
 	def __init__(self, block_size=16):

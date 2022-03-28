@@ -17,6 +17,9 @@ def send(
 	if template not in templates:
 		raise ValueError(f'bad template: {template}')
 	
+	if not isinstance(receivers, list):
+		receivers = [receivers]
+	
 	Sms.Kavehnegar().send(receivers, template, var1, var2, var3)
 
 

@@ -41,8 +41,13 @@ def log(
 		**kwargs
 ):
 	no_log_on_server = kwargs.pop('no_log_on_server', False)
-	if no_log_on_server and dev_def.is_server:
-		return
+	no_log_on_local = kwargs.pop('no_log_on_local', False)
+	if dev_def.is_server:
+		if no_log_on_server:
+			return
+	else:
+		if no_log_on_local:
+			return
 
 	logger = logger if logger is not None else 'default'
 

@@ -29,15 +29,12 @@ class Kavehnegar:
 	
 	def send(
 			self,
-			receivers: ty.Union[str, ty.List[str]],
+			receivers: ty.List[str],
 			template: str,
 			var1: str = None,
 			var2: str = None,
 			var3: str = None,
 	):
-		if not isinstance(receivers, list):
-			receivers = [receivers]
-		
 		body = {'template': template, 'type': 'sms'}
 		if var1 is not None:
 			body.update({'token': str(var1).replace(' ', '\u200c')})

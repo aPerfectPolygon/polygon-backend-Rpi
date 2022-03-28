@@ -14,6 +14,7 @@ from UTILS import dev_utils
 from UTILS.dev_utils import Defaults as dev_def
 from UTILS.dev_utils import Log
 from UTILS.dev_utils.Objects import String, Time, Dict, Json, List
+import time as ti
 
 __root = str(dev_def.project_root)
 __root = __root[:__root.find('Project/')] + 'Files/'
@@ -439,10 +440,16 @@ class Psql:
 				output.append('auto')
 		return output
 	
-	def open(self) -> bool:
+	def open(self, wait_for_connection=True, do_log=True) -> bool:
 		"""
 		open connection if connection is not already open
-
+		
+		if `to many clients` error occur:
+			if wait_for_connection is True:
+				retry 3 times with 1 second sleep between them
+				and if the error was not resolved after errors : log the error
+			else:
+				log the error
 		return
 			True  -> everything went OK
 			False -> something  went WRONG (log saved)
@@ -458,6 +465,22 @@ class Psql:
 				)
 				self.cur = self.conn.cursor()
 			return True
+		except psql_engine.OperationalError as e:
+			if wait_for_connection and 'FATAL:  sorry, too many clients already' in str(e):
+				for i in range(3):
+					Log.log(
+						f'[{self.db_name}] cant connect to db because too many requests, retrying...',
+						no_log_on_local=True
+					)
+					ti.sleep(1)
+					__open = self.open(wait_for_connection=False, do_log=False)
+					if __open:
+						return True
+					if __open is False:
+						return False
+			if do_log:
+				Log.log(f'[{self.db_name}]', exc=e, class_name=self.__class__.__name__)
+			return None
 		except Exception as e:
 			Log.log(f'[{self.db_name}]', exc=e, class_name=self.__class__.__name__)
 			return False
@@ -863,14 +886,14 @@ class Psql:
 			Log.log(f'[{self.db_name}] no index specified', location_depth=3, class_name='myDb')
 			return False
 		
-		columns = data.columns.values.tolist()
+		columns = self._handle_columns(data.columns.tolist(), do_join=False)
 		index_columns = data.index.names
 		all_columns = List.drop_duplicates(index_columns + columns)
 		ct = self._handle_custom_types(ct, all_columns)
 		
 		# noinspection SqlWithoutWhere
 		_q = f"update {schema}.{table} as main_table set \n\t"
-		_q += ',\n\t'.join(f'{c} = new_table.{c}' for c in data.columns)
+		_q += ',\n\t'.join(f'{c} = new_table.{c}' for c in columns)
 		
 		# add values
 		_q += '\nfrom (values \n\t'
@@ -1375,10 +1398,10 @@ class Psql:
 		if not self._check_connection(auto_connection):
 			return False
 		
-		table = self._handle_table_name(table)
 		if not table_id_seq:
-			table_id_seq = f'{table}_id_seq'
-		
+			table_id_seq = f'"{table}_id_seq"'
+		table = self._handle_table_name(table)
+
 		_q = f"SELECT setval('{schema}.{table_id_seq}', COALESCE((SELECT MAX(id)+1 y FROM {schema}.{table}), 1), false) x"
 		_p = None
 		

@@ -23,7 +23,7 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from UTILS import dev_utils
+from UTILS import dev_utils, engines
 from UTILS.dev_utils import Log
 from UTILS.dev_utils.Database import log as db_log
 from UTILS.dev_utils.Database.Psql import Psql
@@ -88,6 +88,7 @@ class ApiInfo:
 	
 	user_fields_to_have: dict = {
 		'main': ['status'],  # SeeAlso: UTILSD.main.MainMiddleware.utils.check_active_user_if_detected
+		'info': ['lang'],
 	}
 	user_fields_needed: dict = {**user_fields_to_have}
 	user_must_be_active: bool = False
@@ -175,7 +176,9 @@ class ApiInfo:
 				res.user_fields_needed.update({k: List.drop_duplicates(res.user_fields_needed[k] + v)})
 			else:
 				res.user_fields_needed.update({k: v})
-		res.content_types_to_accept = List.drop_duplicates(res.content_types_to_accept)
+		res.content_types_to_accept = List.drop_duplicates(
+			res.content_types_to_accept_standard + res.content_types_to_accept
+		)
 		return res
 	
 	def path_generator(self, url: str, callback: callable, **kwargs):
@@ -204,8 +207,11 @@ class CustomUser:
 			'status'
 		],
 		'info': [
+			'lang',
 			'auth_email',
 		],
+		'notification': ['token_app', 'token_web', 'token_test'],
+		'unread_counts': ['notification'],
 		'get_token': True,
 	}
 	all_fields = {
@@ -222,9 +228,16 @@ class CustomUser:
 			'modified',
 		],
 		'info': [
+			'lang',
 			'auth_email',
 			'modified',
 		],
+		'notification': [
+			'token_app',
+			'token_web',
+			'token_test'
+		],
+		'unread_counts': ['notification'],
 		'get_token': True
 	}
 	
@@ -245,9 +258,18 @@ class CustomUser:
 		self.m_modified = None
 		
 		# info
+		self.lang = None
 		self.auth_email = None
 		self.i_modified = None
-	
+		
+		# notification
+		self.notification_token_app = None
+		self.notification_token_web = None
+		self.notification_token_test = None
+		
+		# unread_counts
+		self.unread_counts_notification = None
+		
 	def __repr__(self):
 		return self.data_as_dict()
 	
@@ -269,8 +291,14 @@ class CustomUser:
 			'is_staff': self.is_staff,
 			'is_superuser': self.is_superuser,
 			'm_modified': self.m_modified,
+			'lang': self.lang,
 			'auth_email': self.auth_email,
 			'i_modified': self.i_modified,
+			'notification_token_app': self.notification_token_app,
+			'notification_token_web': self.notification_token_web,
+			'notification_token_test': self.notification_token_test,
+			'unread_counts_notification': self.unread_counts_notification,
+			
 		}
 	
 	def info(self, request, fields: dict):
@@ -299,9 +327,18 @@ class CustomUser:
 		| 		'modified',
 		| 	],
 		| 	'info': [
+		| 		'lang',
 		| 		'auth_email',
 		| 		'modified',
 		| 	],
+		| 	'notification': [
+		| 		'token_app',
+		| 		'token_web',
+		| 		'token_test',
+		|	]
+		| 	'unread_counts': [
+		| 		'notification',
+		| 	]
 		| 	'get_token': true,
 		| }
 
@@ -349,8 +386,10 @@ class CustomUser:
 		
 		main_fields = fields.get('main', [])
 		info_fields = fields.get('info', [])
+		notification_fields = fields.get('notification', [])
+		unread_counts_fields = fields.get('unread_counts', [])
 		
-		if not (main_fields + info_fields):
+		if not (main_fields + info_fields + notification_fields + unread_counts_fields):
 			d_raise(
 				request,
 				djn_def.Messages.unexpected,
@@ -371,12 +410,28 @@ class CustomUser:
 				info_fields.remove('modified')
 				info_fields.append('info.modified as i_modified')
 			_joins.append('inner join users_data.users_info info on acc.id = info.uid')
+		if notification_fields:
+			if 'token_app' in notification_fields:
+				notification_fields.remove('token_app')
+				notification_fields.append('notification.token_app as notification_token_app')
+			if 'token_web' in notification_fields:
+				notification_fields.remove('token_web')
+				notification_fields.append('notification.token_web as notification_token_web')
+			if 'token_test' in notification_fields:
+				notification_fields.remove('token_test')
+				notification_fields.append('notification.token_test as notification_token_test')
+			_joins.append('inner join users_data.users_notification_settings notification on acc.id = notification.uid')
+		if unread_counts_fields:
+			_joins.append('inner join users_data.users_unread_counts unread_counts on acc.id = unread_counts.uid')
 		if get_token:
 			_joins.append(f'left join users_data."users_token_{request.info.platform}" u_token on acc.id = u_token.uid')
 		# endregion
 		
 		# region prepare selects
-		_select_fields = [item if '.' in item else f'"{item}"' for item in main_fields + info_fields]
+		_select_fields = [
+			item if '.' in item else f'"{item}"'
+			for item in main_fields + info_fields + notification_fields + unread_counts_fields
+		]
 		if get_token:
 			_select_fields.append('u_token.token as "token"')
 		# endregion
@@ -399,12 +454,24 @@ class CustomUser:
 			)
 			return self
 		# endregion
-		
-		# region assiginig
+
+		# region assigning
 		for _f in main_fields + info_fields:
 			if ' as ' in _f:
 				_f = _f.split(' as ')[1]
 			setattr(self, _f, data[_f])
+		for _f in notification_fields:
+			if ' as ' in _f:
+				_f = _f.split(' as ')[1]
+				setattr(self, _f, data[_f])
+			else:
+				setattr(self, f'notification_{_f}', data[_f])
+		for _f in unread_counts_fields:
+			if ' as ' in _f:
+				_f = _f.split(' as ')[1]
+				setattr(self, _f, data[_f])
+			else:
+				setattr(self, f'unread_counts_{_f}', data[_f])
 		if get_token:
 			self.token = data['token']
 		# endregion
@@ -432,8 +499,11 @@ class CustomUser:
 			username: str
 			email: str
 			auth_email: bool
+			lang: str
 			curr_version: int
 			force_version: int
+			unread_notification_count: int
+			has_notification_token: bool
 
 		Django Errors:
 		-----
@@ -446,6 +516,16 @@ class CustomUser:
 		unexpected:
 			| ---
 		"""
+		
+		if request.info.platform == djn_def.Platforms.app:
+			has_notification_token = bool(self.notification_token_app)
+		elif request.info.platform == djn_def.Platforms.web:
+			has_notification_token = bool(self.notification_token_web)
+		elif request.info.platform == djn_def.Platforms.test:
+			has_notification_token = bool(self.notification_token_test)
+		else:
+			has_notification_token = False
+		
 		return {
 			# region info
 			'uid': self.uid,
@@ -454,6 +534,9 @@ class CustomUser:
 			'username': self.username,
 			'email': self.email,
 			'auth_email': self.auth_email,
+			'lang': self.lang,
+			'unread_notification_count': self.unread_counts_notification,
+			'has_notification_token': has_notification_token,
 			# endregion
 			# region version specification
 			'curr_version': djn_def.app_current_version,
@@ -632,8 +715,10 @@ class CustomUser:
 			)
 			return  # just for ide warnings
 		
-		# create user`s related records accross other tables
-		request.db.server.insert('users_info', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
+		# create user`s related records across other tables
+		request.db.server.insert('users_info', pd.DataFrame(columns=['uid', 'lang'], data=[[acc.id, request.lang]]))
+		request.db.server.insert('users_notification_settings', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
+		request.db.server.insert('users_unread_counts', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
 		
 		if auto_login:
 			Token(request).create()
@@ -754,6 +839,11 @@ class CustomUser:
 			pd.DataFrame(columns=['last_login'], data=[["timezone('utc', now())"]]),
 			[('id', '=', self.uid)]
 		)
+		request.db.server.update(
+			'users_info',
+			pd.DataFrame(columns=['lang'], data=[[request.lang]]),
+			[('uid', '=', self.uid)]
+		)
 		self.info(request, {'template': 'info'})
 	
 	def upgrade(self, request):
@@ -761,6 +851,50 @@ class CustomUser:
 	
 	def downgrade(self, request):
 		pass
+	
+	def update_notification_unread_count(self, request, force=False):
+		if self.unread_counts_notification is not None and (self.unread_counts_notification < 100 or force):
+			self.unread_counts_notification = request.db.server.custom(
+				f"update users_data.users_unread_counts set notification = (select count('id') from (select 'id' from users_data.users_notification_inventory where ({self.uid} = any(uids) or uids is NULL) and not {self.uid} = any(users_seen) limit 100) x) where uid = {self.uid} returning notification",
+				None,
+				to_commit=True,
+				to_fetch=True
+			).values.tolist()[0][0]
+
+	def topic_assign(self, topic):
+		for item in [self.notification_token_web]:
+			if item:
+				engines.Notification.Topic.assign(topic, item)
+
+	def topic_unassign(self, topic):
+		for item in [self.notification_token_web]:
+			if item:
+				engines.Notification.Topic.unassign(topic, item)
+
+	def send_notification(
+			self,
+			title: str,
+			body: str,
+			target: int = 0,
+			image: str = None,
+			icon: str = None,
+			url: str = None,
+			web_url: str = None,
+			choices: ty.List[str] = None,
+			**kwargs
+	):
+		engines.Notification.send(
+			[self.uid],
+			title,
+			body,
+			target,
+			image,
+			icon,
+			url,
+			web_url,
+			choices,
+			**kwargs
+		)
 
 
 class CustomDb:
@@ -1078,9 +1212,9 @@ class MainMiddleware:
 			except:
 				request.input_body = {}
 			
-			lang = request.headers.get('HTTP_ACCEPT_LANGUAGE', 'fa')
-			if lang != 'fa' and lang != 'en':
-				lang = 'fa'
+			lang = request.headers.get('HTTP_ACCEPT_LANGUAGE', prj_def.Languages.en)
+			if lang not in prj_def.Languages.all:
+				lang = prj_def.Languages.fa
 			request.lang = lang
 			
 			return request
@@ -1216,14 +1350,22 @@ class MainMiddleware:
 			
 			# bad useragent
 			ua = request.headers.get('HTTP_USER_AGENT', '')
-			if re.match('postman|curl|nmap', ua):
+			if re.match('postman|curl|nmap', ua, re.IGNORECASE):
 				return m_raise(
 					request,
 					djn_def.Messages.bad_input,
 					f'request from banned user agent `{ua}` {djn_def.Messages.possible_attack}',
 					response_just_message=True
 				)
-			
+
+			if 'HTTP_POSTMAN_TOKEN' in request.headers:
+				return m_raise(
+					request,
+					djn_def.Messages.bad_input,
+					f'request from postman {djn_def.Messages.possible_attack}',
+					response_just_message=True
+				)
+
 			# ban bad host
 			host = request.headers.get('HTTP_HOST', None)
 			if host is None or host.split(':')[0] not in djn_def.allowed_hosts:
@@ -1240,6 +1382,119 @@ class MainMiddleware:
 		def check_input_model(request: CustomRequest) -> ty.Union[CustomRequest, HttpResponse]:
 			"""errors are based on model"""
 			if request.info.input_model == djn_def.Models.app:
+				"""
+				UpdatedAt: ---
+
+				Django Errors:
+				-----
+				main:
+					| ---
+				links:
+					| ---
+				possible attack:
+					| status: 400
+					| comment: 'input' key not provided
+					| Message: UTILSD.Defaults.Messages.bad_input
+					| Result: null
+					| ---------------------------------------------------------------
+					| status: 400
+					| comment: decryption error
+					| Message: UTILSD.Defaults.Messages.bad_input
+					| Result: null
+					| ---------------------------------------------------------------
+					| status: 400
+					| comment: not json serializable (encryption at risk)
+					| Message: UTILSD.Defaults.Messages.bad_input
+					| Result: null
+					| ---------------------------------------------------------------
+					| status: 400
+					| comment: `HEADERS` key not provided (encryption at risk)
+					| Message: UTILSD.Defaults.Messages.bad_input
+					| Result: null
+					| ---------------------------------------------------------------
+					| status: 400
+					| comment: `CONTENTS` key not provided (encryption at risk)
+					| Message: UTILSD.Defaults.Messages.bad_input
+					| Result: null
+					| ---------------------------------------------------------------
+					| status: 400
+					| comment: `TIMESTAMP` header not provided (encryption at risk)
+					| Message: UTILSD.Defaults.Messages.bad_input
+					| Result: null
+					| ---------------------------------------------------------------
+					| status: 451
+					| comment: request timestamp is old
+					| Message: UTILSD.Defaults.Messages.bad_timestamp
+					| Result: null
+					| ---------------------------------------------------------------
+				unexpected:
+					| ---
+				"""
+				
+				__input = request.input_body.get('input', None)
+				if not __input:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						comment=f"'input' key not provided {djn_def.Messages.possible_attack} %100"
+					)
+				
+				try:
+					decrypted = Encryptions.V1().decrypt(request.input_body['input'])
+				except Exception as err:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						err,
+						exc_comment=f'decryption error {djn_def.Messages.possible_attack} %100'
+					)
+				
+				try:
+					input_data = Json.decode(decrypted, do_raise=True)
+				except Exception as err:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						err,
+						exc_comment=f'not json serializable {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
+					)
+				
+				headers = input_data.get('HEADERS', None)
+				contents = input_data.get('CONTENTS', None)
+				
+				if headers is None:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						comment=f'`HEADERS` key not provided {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
+					)
+				if contents is None:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						comment=f'`CONTENTS` key not supplied {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
+					)
+				
+				request.META.update(headers)
+				request.headers.update(headers)
+				request.input_body = contents
+				
+				timestamp = request.headers.get('HTTP_TIMESTAMP', None)
+				if timestamp is None:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						comment=f'`TIMESTAMP` header not provided {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
+					)
+				timestamp = Time.ts2dt(timestamp, 'gmt', remove_tz=True)
+				if abs(Time.ParseTimeDelta(request.start - timestamp).hours) >= 48:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_timestamp,
+						comment=f"{timestamp}, curr_ts -> ({request.start}) {djn_def.Messages.possible_attack} %70",
+						code=451
+					)
+			elif request.info.input_model == djn_def.Models.web:
 				"""
 				UpdatedAt: ---
 
@@ -1415,6 +1670,8 @@ class MainMiddleware:
 				}
 				request.headers.update(to_update)
 				request.META.update(to_update)
+			elif request.info.platform == djn_def.Platforms.web:
+				request.headers.update({'token': request.headers.get('HTTP_AUTHENTICATION', None)})
 			elif request.info.platform == djn_def.Platforms.test:
 				request.headers.update({'token': request.headers.get('HTTP_AUTHENTICATION', None)})
 			
@@ -1613,6 +1870,10 @@ class MainMiddleware:
 				data = result.data
 				if request.info.output_model == djn_def.Models.app:
 					result.content = f'"{Encryptions.V1().encrypt(Json.encode(data))}"'
+				elif request.info.output_model == djn_def.Models.web:
+					result.content = f'"{Encryptions.V1().encrypt(Json.encode(data))}"'
+				elif request.info.output_model == djn_def.Models.none:
+					result.content = Json.encode(data)
 				elif request.info.output_model == djn_def.Models.test:
 					result.content = Json.encode(data)
 				del result.data
@@ -2383,9 +2644,9 @@ def _d_main_return(
 	elif request.info.response_html:
 		if not template:
 			if 200 <= code < 300:
-				template = djn_def.templates['main']['success']
+				template = djn_def.templates['main']['success'][request.lang]
 			else:
-				template = djn_def.templates['main']['error']
+				template = djn_def.templates['main']['error'][request.lang]
 				data = {}
 		
 		with open(f'{prj_def.project_root}/templates/{template}', 'r', encoding='utf-8') as f:
@@ -2396,7 +2657,10 @@ def _d_main_return(
 		res = HttpResponse('', status=code)
 		res.data = data
 	
-	res.response_additional_headers = request.info.response_additional_headers
+	res.response_additional_headers = {
+		**request.info.response_additional_headers,
+		**kwargs.pop('response_additional_headers', {})
+	}
 	return res
 
 
@@ -2409,24 +2673,24 @@ def _find_description_based_on_type(
 	"""
 	Example Configurations:
 	{
-		'Static_symbols': {
+		'API_NAME': {
 			'type': 'code',
 			400: {
 				'type': 'message',
 				djn_def.Messages.maximum_symbols: {
 					'type': 'lang',
-					'fa': {
+					'fa-ir': {
 						'type': 'platform',
 						'Web': 'PERSIAN'
 					},
-					'en': 'English Error',
+					'en-us': 'English Error',
 				}
 			}
 		}
 	}
 	-------------------------------
 	{
-		'Static_symbols': 'XX'
+		'API_NAME': 'XX'
 	}
 	"""
 	

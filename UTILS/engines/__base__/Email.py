@@ -53,11 +53,11 @@ def _send(
 				with open(f'{templates_path}/{template}', 'r', encoding='utf-8') as f:
 					msg.attach(MIMEText(markdown.markdown(f.read().format(**template_content)), 'html'))
 			
-			server = smtplib.SMTP(host=server, port=port)
-			server.starttls()
-			server.login(sender, password)
-			server.sendmail(sender, receiver, msg.as_string())
-			server.quit()
+			_server = smtplib.SMTP(host=server, port=port)
+			_server.starttls()
+			_server.login(sender, password)
+			_server.sendmail(sender, receiver, msg.as_string())
+			_server.quit()
 			
 			print(f'MAIL sent {subject}')
 			break

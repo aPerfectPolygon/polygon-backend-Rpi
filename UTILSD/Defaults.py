@@ -1,4 +1,7 @@
+import copy
+
 from UTILS.prj_utils import Defaults as prj_def
+from UTILS import Cache
 
 
 class Messages:
@@ -44,8 +47,9 @@ class Models:
 	none = 'None'
 	test = 'Test'
 	app = 'App'
+	web = 'Web'
 	
-	all = [test, app]
+	all = [test, app, web]
 
 
 class Platforms:
@@ -53,13 +57,15 @@ class Platforms:
 	# when adding platform remember to create users_token_{platform} table
 	test = 'Test'
 	app = 'App'
+	web = 'Web'
 	
-	all = [test, app]
+	all = [test, app, web]
 
 
 class TokenExpiration:
 	test = 31536000  # 60*60*24*356  ~ 1 year
 	app = 31536000  # 60*60*24*356  ~ 1 year
+	web = 31536000  # 60*60*24*356  ~ 1 year
 
 
 def _r(r, e, **kwargs):
@@ -75,9 +81,9 @@ class Fields:
 	}
 	regex_map = {
 		'username': _r(
-			"^(?=.{5,20}$)(?![_.])(?!Polygon_)(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$",  # signup/edit-profile regex
+			"^[a-zA-Z](?=.{5,20}$)(?![_.])(?!polygon_)(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$",  # signup/edit-profile regex
 			'not standard',
-			regex2="^(?=.{5,20}$)(?![_.])(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$"  # login regex
+			regex2="^[a-zA-Z](?=.{5,20}$)(?![_.])(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$"  # login regex
 		),
 		'password': _r(
 			# r'(?=.{9,})(?=.*?[^\w\s])(?=.*?[0-9])(?=.*?[A-Z]).*?[a-z].*'
@@ -98,42 +104,61 @@ app_force_version = 1
 app_current_version = 1
 templates = {
 	'main': {
-		'error': 'main/error.html',
-		'success': 'main/success.html',
+		'error': {
+			prj_def.Languages.fa: 'main/error/fa-ir.html',
+			prj_def.Languages.en: 'main/error/en-us.html',
+		},
+		'success': {
+			prj_def.Languages.fa: 'main/success/fa-ir.html',
+			prj_def.Languages.en: 'main/success/en-us.html',
+		},
+		'forward': {
+			prj_def.Languages.fa: 'main/forward/fa-ir.html',
+			prj_def.Languages.en: 'main/forward/en-us.html',
+		}
 	},
 	'email': {
 		'signupSeries': {
-			'signup': 'email/signupSeries/signup.html',
-			'welcome': 'email/signupSeries/welcome.html',
+			'signup': {
+				prj_def.Languages.fa: 'email/signupSeries/signup/fa-ir.html',
+				prj_def.Languages.en: 'email/signupSeries/signup/en-us.html',
+			},
+			'welcome': {
+				prj_def.Languages.fa: 'email/signupSeries/welcome/fa-ir.html',
+				prj_def.Languages.en: 'email/signupSeries/welcome/en-us.html',
+			},
 		},
 		'forgetPasswordSeries': {
-			'to_change': 'email/forgetPasswordSeries/to_change.html',
-			'changed': 'email/forgetPasswordSeries/changed.html',
+			'to_change': {
+				prj_def.Languages.fa: 'email/forgetPasswordSeries/to_change/fa-ir.html',
+				prj_def.Languages.en: 'email/forgetPasswordSeries/to_change/en-us.html',
+			},
+			'changed': {
+				prj_def.Languages.fa: 'email/forgetPasswordSeries/changed/fa-ir.html',
+				prj_def.Languages.en: 'email/forgetPasswordSeries/changed/en-us.html',
+			},
 		}
 	}
 }
 links = {}
 
-allowed_hosts = ['127.0.0.1', 'localhost']
+allowed_hosts = ['127.0.0.1', 'localhost', Cache.host.split(':')[0]]
 if prj_def.ip not in allowed_hosts:
 	allowed_hosts.append(prj_def.ip)
 
 descriptions_api_based = {}
-descriptions_message_based = {}
-descriptions_user_info_field_translator = {
-	'username': {
-		'fa': 'نام کاربری',
-		'en': 'username',
-	},
-	'password': {
-		'fa': 'رمز عبور',
-		'en': 'password',
-	},
-	'email': {
-		'fa': 'ایمیل',
-		'en': 'email',
-	},
+for api_msg, trns in Cache.translations['description_based_on_api'].by_key.items():
+	api, msg = api_msg.split('.')
+	if api not in descriptions_api_based:
+		descriptions_api_based.update({api: {'type': 'message'}})
+	descriptions_api_based[api].update({getattr(Messages, msg): {'type': 'lang', **trns}})
+descriptions_message_based = {
+	getattr(Messages, msg): {'type': 'lang', **trns}
+	for msg, trns in Cache.translations['descriptions_based_on_message'].by_key.items()
 }
+descriptions_user_info_field_translator = copy.deepcopy(
+	Cache.translations['descriptions_user_info_field_translator'].by_key
+)
 
 social_urls = []
 support_email = 'elyasnz.1999@gmail.com'

@@ -13,6 +13,15 @@ from UTILS.dev_utils.Database.Psql.main import Psql
 from UTILS.prj_utils.FirstSetup import git_puller, sync_venv
 
 
+__prj_root = str(prj_def.project_root)
+files_translations = __prj_root[:__prj_root.find('Project/')] + 'Files/translations.xlsx'
+if os.path.exists(files_translations):
+	# translations = pd.read_excel(files_translations)
+	translations = pd.read_excel('translations.xlsx')  # removeme
+else:
+	translations = pd.read_excel('translations.xlsx')
+	
+
 def supervisor_config():
 	dev_utils.supervisor_create_or_restart_service(
 		'PolygonApi',
@@ -81,6 +90,20 @@ def server_first_setup():
 				]
 			)
 		)
+	
+	if db.table_exists('translations'):
+		db.drop('translations')
+	
+	db.create(
+		'translations',
+		{
+			'groups': 'text[]',
+			'key': 'varchar unique',
+			**{lang: 'varchar' for lang in prj_def.Languages.all}
+		},
+		ts_columns='created',
+	)
+	db.insert('translations', translations)
 	
 	# endregion
 	
@@ -171,7 +194,7 @@ def server_first_setup():
 			ts_columns='created'
 		)
 		
-		for platform in ['App', 'Test']:
+		for platform in ['App', 'Web', 'Test']:
 			db.create(
 				f'users_token_{platform}',
 				{
@@ -188,9 +211,77 @@ def server_first_setup():
 				'id': 'serial primary key',
 				'uid': 'integer  references users_data.account_account(id) on delete cascade',
 				
+				'lang': "varchar(10) default 'en-us'",
 				'auth_email': "boolean default false",
 			},
 			ts_columns=['created', 'modified']
+		)
+		
+		db.create(
+			'users_notification_settings',
+			{
+				'id': 'serial primary key',
+				'uid': 'integer unique references users_data.account_account(id) on delete cascade',
+				
+				'token_app': 'varchar(200) default null',
+				'token_web': 'varchar(200) default null',
+				'token_test': 'varchar(200) default null',
+			},
+			ts_columns='created'
+		)
+		
+		db.create(
+			'users_unread_counts',
+			{
+				'id': 'serial primary key',
+				'uid': 'integer unique references users_data.account_account(id) on delete cascade',
+				
+				'notification': "integer default 0",
+			},
+			ts_columns='created'
+		)
+		
+		db.create(
+			'users_notification_inventory',
+			{
+				'id': 'serial primary key',
+				'uids': 'int[]',
+				'title': 'varchar(100)',
+				'body': 'varchar(500)',
+				'target': 'int default 0',
+				'image': 'varchar(500)',
+				'icon': 'varchar(500)',
+				'url': 'varchar(500)',
+				'keywords': 'json',
+				'meta': 'varchar(1000)',
+				'users_seen': 'integer[] default array[]::integer[]',
+				'res': 'json',
+				'important': 'boolean default false',
+				'args_title': 'text[] default array[]::text[]',
+				'args_body': 'text[] default array[]::text[]',
+			},
+			ts_columns='created',
+			set_index=True,
+		)
+		
+		db.create(
+			'users_notification_quiz',
+			{
+				'id': 'serial primary key',
+				'uids': 'int[]',
+				'topic': 'varchar(50)',
+				'title': 'varchar(100)',
+				'body': 'varchar(500)',
+				'target': 'int default 0',
+				'image': 'varchar(500)',
+				'res': 'json',
+				'choices': 'text[] default array[]::text[]',
+				'right_choice': 'integer',
+				'users_right': 'integer[] default array[]::integer[]',
+				'users_wrong': 'integer[] default array[]::integer[]',
+			},
+			ts_columns='created',
+			set_index=True,
 		)
 	
 	# endregion
