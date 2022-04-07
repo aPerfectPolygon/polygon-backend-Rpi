@@ -199,6 +199,7 @@ class Psql:
 			'custom_types': kwargs.get('custom_types', {}),
 			'group_unique': kwargs.get('group_unique', []),
 			'null_type_casting': kwargs.get('null_type_casting', None),
+			'group_by': kwargs.get('group_by', None),
 		}
 	
 	def get_query(self, query, params, do_print=False) -> ty.Optional[str]:
@@ -416,6 +417,15 @@ class Psql:
 		else:
 			Log.log(f'[{self.db_name}] bad order by type {ob}', location_depth=3, class_name='myDb')
 	
+	def _handle_group_by(self, gb: ty.Tuple[str]) -> ty.Optional[str]:
+		"""
+			('uid', 'order_id')
+		"""
+		if not gb:
+			return
+
+		return f"group by {self._handle_columns(gb)}"
+
 	@staticmethod
 	def _handle_ts_columns(ts_columns: ty.Union[str, ty.List[str]], **kwargs) -> ty.Optional[dict]:
 		ts_columns = ts_columns if dev_utils.is_itterable(ts_columns) else [ts_columns]
@@ -651,9 +661,12 @@ class Psql:
 			joins: ty.List[tuple] = None,
 			**kwargs
 	) -> pd.DataFrame:
-		schema, auto_connection, print_query, get_query, dt2ts, tz, lo, ob = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, dt2ts, tz, lo, ob, gb = Dict.multiselect(
 			self.handle_kwargs(kwargs),
-			['schema', 'auto_connection', 'print_query', 'get_query', 'dt2ts', 'timezone', 'limit_offset', 'order_by']
+			[
+				'schema', 'auto_connection', 'print_query', 'get_query',
+				'dt2ts', 'timezone', 'limit_offset', 'order_by', 'group_by'
+			]
 		).values()
 		
 		if not self._check_connection(auto_connection):
@@ -665,6 +678,7 @@ class Psql:
 		joins = self._handle_joins(joins)
 		lo = self._handle_limit_offset(lo)
 		ob = self._handle_order_by(ob)
+		gb = self._handle_group_by(gb)
 		
 		# first part of query
 		_q = f'select {columns}\nfrom {schema}.{table} main_table'
@@ -680,6 +694,10 @@ class Psql:
 		else:
 			_p = []
 		
+		# add group by
+		if gb:
+			_q += f'\n{gb}'
+
 		# add order by
 		if ob:
 			_q += f'\n{ob}'
