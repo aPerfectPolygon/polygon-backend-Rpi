@@ -39,7 +39,7 @@ def send(
 	args_body = kwargs.pop('args_body', [])
 	right_choice = kwargs.pop('right_choice', None)
 	if not web_url:
-		web_url = web_url_translator.get(target, Cache.host)
+		web_url = web_url_translator.get(target, prj_def.host)
 
 	__splitted = body.split(' ')
 	if len(__splitted) > __max_body_words:
@@ -219,7 +219,7 @@ class Topic:
 	):
 		right_choice = kwargs.pop('right_choice', None)
 		if not web_url:
-			web_url = web_url_translator.get(target, Cache.host)
+			web_url = web_url_translator.get(target, prj_def.host)
 
 		is_quiz = bool(choices)
 		_choices = {}

@@ -142,7 +142,7 @@ templates = {
 }
 links = {}
 
-allowed_hosts = ['127.0.0.1', 'localhost', Cache.host.split(':')[0]]
+allowed_hosts = ['127.0.0.1', 'localhost', prj_def.host.split(':')[0]]
 if prj_def.ip not in allowed_hosts:
 	allowed_hosts.append(prj_def.ip)
 

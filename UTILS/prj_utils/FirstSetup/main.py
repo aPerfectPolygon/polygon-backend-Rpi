@@ -125,6 +125,26 @@ def server_first_setup():
 		},
 	)
 	
+	db.create(
+		'modules',
+		{
+			'id': 'serial primary key',
+			'type': 'varchar',
+			'name': 'varchar',
+		},
+	)
+	
+	db.create(
+		'modules_io',
+		{
+			'id': 'serial primary key',
+			'module': 'integer references services.modules(id) on delete cascade',
+			'pin': 'integer',
+			'io': 'varchar(2)',
+			'state': 'integer default 0',
+		},
+	)
+	
 	# endregion
 	
 	# region logs

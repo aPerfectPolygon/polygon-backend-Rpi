@@ -1,3 +1,5 @@
+import pandas as pd
+
 from UTILS.dev_utils.Database.Psql import Psql
 from UTILS.dev_utils import Defaults as dev_def
 from UTILS import dev_utils
@@ -5,7 +7,8 @@ from UTILS import dev_utils
 log_emails = []
 mail_servers = {}
 translations = {}
-host = 'test.smartpolygon.io'
+modules = pd.DataFrame(columns=['id', 'type', 'name'])
+modules_io = pd.DataFrame(columns=['id', 'name', 'pin', 'io'])
 
 
 def update_translations():
@@ -21,7 +24,9 @@ def update_translations():
 def fill_cache():
 	global log_emails
 	global mail_servers
-
+	global modules
+	global modules_io
+	
 	update_translations()
 	db = Psql('constants', open=True)
 	
@@ -30,6 +35,16 @@ def fill_cache():
 	
 	# fill mail_servers
 	mail_servers = {x['name']: x for x in db.read('mail_servers', '*').to_dict(orient='records')}
+	
+	# fill modules
+	modules = db.read('modules', ['id', 'type', 'name'], schema='services')
+	modules_io = db.read(
+		'modules',
+		['main_table.id', 'name', 'pin', 'io'],
+		[('type', '=', 'IO')],
+		joins=[('inner', 'services.modules_io', 'io', 'main_table.id', '=', 'io.module')],
+		schema='services'
+	)
 	
 	db.close()
 
