@@ -37,6 +37,8 @@ class Serial(sck_utils.BasicSocket):
 		self.baudrate = self.serial.baudrate
 		self.port = self.serial.port
 		self.name = f'{String.gen_random(5)}_{self.port}_{self.baudrate}'
+		
+		self.kwargs = kwargs
 	
 	def __repr__(self):
 		return str(self.port)

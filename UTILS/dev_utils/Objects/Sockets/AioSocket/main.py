@@ -35,6 +35,7 @@ class AioSocket(sck_utils.BasicSocket):
 		self.peer_name = self.conn.getpeername()
 		self.ip = self.peer_name[0]
 		self.name = f'{String.gen_random(5)}_{self.ip}_{self.host_name[1]}'
+		self.kwargs = kwargs
 	
 	@property
 	def is_closed(self):

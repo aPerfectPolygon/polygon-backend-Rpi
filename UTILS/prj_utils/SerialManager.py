@@ -164,3 +164,9 @@ class SerialManager:
 			f'IO|{name}|RI{",".join(read_inputs)}\n'
 			f'IO|{name}|SO{",".join(set_outputs)}'
 		)
+	
+	async def io_set_output(self, name: str, settings: dict):
+		so = []
+		for pin, state in settings.items():
+			so.append(f'{pin}={state}')
+		await self.s.send(f'IO|{name}|SO{",".join(so)}')

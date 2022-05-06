@@ -82,6 +82,8 @@ class BasicSocket:
 		self.peer_name = [None, None, None]
 		self.name = f'{String.gen_random(5)}'
 		
+		self.kwargs = {}
+		
 		self.ip = None
 		
 		# encryption

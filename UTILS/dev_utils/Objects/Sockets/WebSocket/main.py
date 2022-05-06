@@ -16,7 +16,8 @@ class WebSocket(sck_utils.BasicSocket):
 		
 		# main
 		self.ws = ws
-		
+		self.kwargs = kwargs
+
 		try:
 			# noinspection PyProtectedMember
 			conn = ws.reader._transport._sock

@@ -60,6 +60,46 @@ class Tracking:
 		self.trackers_items.update({tracker: []})
 
 
+class TrackerManager:
+	def __init__(self):
+		self.trackers = pd.DataFrame(columns=['id', 'tag', 'value', 'auto_added'])
+	
+	def untrack(self, tracker_id: str = None, tag: str = None, value: str = None, auto_added: bool = None):
+		conds = pd.Series([True] * len(self.trackers.id))
+		if tracker_id:
+			conds &= (self.trackers.id == tracker_id)
+		if tag is not None:
+			conds &= (self.trackers.tag == tag)
+		if value is not None:
+			conds &= (self.trackers.value == value)
+		if auto_added is not None:
+			conds &= (self.trackers.auto_added == auto_added)
+		
+		self.trackers = self.trackers.loc[~conds]
+	
+	def track(self, tracker_id: str, tag: str, value: str = None, auto_added: bool = None):
+		# check if it already exists
+		conds = (self.trackers.tag == tag)
+		if value is not None:
+			conds &= (self.trackers.value == value)
+		if auto_added is not None:
+			conds &= (self.trackers.auto_added == auto_added)
+		
+		if self.trackers.loc[conds].empty:
+			self.trackers = self.trackers.append(
+				pd.DataFrame(
+					[[tracker_id, tag, value, auto_added]], columns=['id', 'tag', 'value', 'auto_added']
+				)
+			)
+	
+	def get_trackers(self, tag: str, value: str = None):
+		conds = (self.trackers.tag == tag)
+		if value is not None:
+			conds &= (self.trackers.value == value)
+		
+		return self.trackers.loc[conds]
+
+
 class AioResponse(aiohttp.ClientResponse):
 	Json: dict = {}
 	is_success: bool = False

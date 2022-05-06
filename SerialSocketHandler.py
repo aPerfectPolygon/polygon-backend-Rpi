@@ -2,18 +2,13 @@ import pandas as pd
 
 from UTILS import Cache
 from UTILS.dev_utils import Log
-import UTILS.dev_utils.Objects.Sockets as sck_utils
+from SocketServers import client_handler, sockets as connected_sockets, tracker_manager as sockets_tracker_manager, \
+	broadcast as broadcast_to_sockets
 from UTILS.dev_utils.Database import Psql
+from UTILS.dev_utils.Objects import Json
+from UTILS.dev_utils.Objects.Sockets import AioSocket
 from UTILS.prj_utils.SerialManager import SerialManager
 import asyncio as aio
-
-
-async def client_handler(socket: sck_utils.BasicSocket):
-	while True:
-		data = await socket.receive()
-		if not data:
-			return
-		print(data)
 
 
 async def io_serial_handler(name: str, version: str, tag: str, loc: str, comment: str, pin: int, state: int):
@@ -52,6 +47,16 @@ async def io_serial_handler(name: str, version: str, tag: str, loc: str, comment
 			],
 			auto_connection=True
 		)
+	elif tag == 'OUTPUT_CHANGED':
+		trackers = sockets_tracker_manager.get_trackers('OUTPUT_CHANGED', str(pin)).id.tolist()
+		if trackers:
+			print(trackers)
+			await broadcast_to_sockets(
+				Json.encode({'type': 'event', 'data': {'event': 'OUTPUT_CHANGED', 'pin': str(pin), 'state': state}}),
+				trackers
+			)
+			sockets_tracker_manager.untrack(tag='OUTPUT_CHANGED', value=str(pin), auto_added=True)
+			print(sockets_tracker_manager.get_trackers('OUTPUT_CHANGED', str(pin)).id.tolist())
 
 
 if __name__ == '__main__':
@@ -60,6 +65,6 @@ if __name__ == '__main__':
 	loop = aio.get_event_loop()
 	loop.run_until_complete(aio.gather(
 		serial_manager.serial_manager(),
-		# AioSocket.serve('0.0.0.0', 1234, client_handler)
+		AioSocket.serve('0.0.0.0', 1234, client_handler, serial_manager=serial_manager)
 	))
 	loop.run_forever()
