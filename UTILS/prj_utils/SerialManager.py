@@ -100,7 +100,7 @@ class SerialManager:
 		self.io_callback = io_callback
 	
 	async def _wait_for_connection(self):
-		self.s = None
+		# self.s = None
 		while True:
 			try:
 				self.s = await Serial.connect('/dev/ttyACM0', 9600)
@@ -159,6 +159,8 @@ class SerialManager:
 			else:
 				set_outputs.append(f'{pin["pin"]}={pin["state"]}')
 		
+		if self.s is None:
+			return
 		await self.s.send(
 			f'IO|{name}|SIO{",".join(sio)}\n'
 			f'IO|{name}|RI{",".join(read_inputs)}\n'
@@ -169,4 +171,7 @@ class SerialManager:
 		so = []
 		for pin, state in settings.items():
 			so.append(f'{pin}={state}')
+		
+		if self.s is None:
+			return
 		await self.s.send(f'IO|{name}|SO{",".join(so)}')

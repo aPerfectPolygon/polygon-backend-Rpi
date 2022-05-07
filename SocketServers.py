@@ -11,7 +11,7 @@ About:
 	|
 	| type `changed` will be sent
 	|   * after detecting a change in objects that are being tracked
-	| type `changed_error` will be sent
+	| type `cant_change` will be sent
 	|   * after detecting an error in changing an output
 
 
@@ -60,7 +60,7 @@ Output Models:
 	| -----------------------------------------------
 	| detected an error in changing an output
 	| {
-	| 	"type": "changed_error",
+	| 	"type": "cant_change",
 	| 	"data": {"object": int, "state": int}
 	| }
 	| -----------------------------------------------
@@ -69,7 +69,6 @@ Output Models:
 import asyncio as aio
 import time as ti
 import typing as ty
-import datetime as dt
 
 import pandas as pd
 
@@ -293,6 +292,7 @@ async def client_handler(socket: sck_utils.BasicSocket):
 						module_data = module_data[0]
 						
 						tracker_manager.track(socket.name, object_id, auto_added=True)
+						socket.kwargs['waiter'].wait_for_event(f'IO|change|{object_id}', 1)
 						await socket.kwargs['serial_manager'].io_set_output(
 							module_data['name'], {module_data['pin']: state}
 						)

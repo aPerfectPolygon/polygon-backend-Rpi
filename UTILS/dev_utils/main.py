@@ -98,6 +98,61 @@ class TrackerManager:
 		return self.trackers.loc[conds]
 
 
+class WaitForEvents:
+	def __init__(self, sync_cb: ty.Callable = None, async_cb: ty.Callable = None):
+		self.events = pd.DataFrame(columns=['event', 'end', 'kwargs'])
+		self.sync_cb = sync_cb
+		self.async_cb = async_cb
+	
+	# region sync
+	
+	def check_events(self):
+		if self.events.empty or self.sync_cb is None:
+			return
+		
+		t = ti.time()
+		for item in self.events.loc[self.events.end < t].to_dict('records'):
+			self.sync_cb(item['event'], **item['kwargs'])
+		self.events = self.events.loc[self.events.end >= t].reset_index(drop=True)
+	
+	def loop_check_events(self, interval=0.1):
+		while True:
+			ti.sleep(interval)
+			self.check_events()
+	
+	# endregion
+	
+	# region async
+	
+	async def aio_check_events(self):
+		if self.events.empty or self.async_cb is None:
+			return
+		
+		t = ti.time()
+		for item in self.events.loc[self.events.end < t].to_dict('records'):
+			await self.async_cb(item['event'], **item['kwargs'])
+		self.events = self.events.loc[self.events.end >= t].reset_index(drop=True)
+	
+	async def aio_loop_check_events(self, interval=0.1):
+		while True:
+			await aio.sleep(interval)
+			await self.aio_check_events()
+	
+	# endregion
+	
+	def event_occured(self, event: str):
+		if self.events.empty:
+			return
+		
+		self.events = self.events.loc[self.events.event != event].reset_index(drop=True)
+	
+	def wait_for_event(self, event: str, wait_for: float, **kwargs):
+		self.events = self.events.append(pd.DataFrame(
+			[[event, ti.time() + wait_for, kwargs]],
+			columns=['event', 'end', 'kwargs']
+		)).reset_index(drop=True)
+
+
 class AioResponse(aiohttp.ClientResponse):
 	Json: dict = {}
 	is_success: bool = False
@@ -711,22 +766,3 @@ class MultiLingual:
 
 def if_truthiness(x, none=None):
 	return x if x else none
-
-
-if __name__ == '__main__':
-	aio.run(
-		aio_safe_request(
-			'get',
-			# 'https://httpbin.org/get'
-			'https://api.binance.com/api/v3/ticker/24hr',
-			# 'https://www.forex.com/_Srvc/feeds/LiveRates.asmx/GetProductRates',
-			use_proxy=True
-		)
-	)
-	
-	safe_request(
-		'get',
-		# 'https://httpbin.org/get'
-		'https://api.binance.com/api/v3/ticker/24hr',
-		use_proxy=True
-	)

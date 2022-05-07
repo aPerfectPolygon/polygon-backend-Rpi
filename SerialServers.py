@@ -1,9 +1,8 @@
 import pandas as pd
 
-from UTILS import Cache
+from UTILS import Cache, dev_utils
 from UTILS.dev_utils import Log
-from SocketServers import client_handler, sockets as connected_sockets, tracker_manager as sockets_tracker_manager, \
-	broadcast as broadcast_to_sockets
+from SocketServers import client_handler, tracker_manager as sockets_tracker_manager, broadcast as broadcast_to_sockets
 from UTILS.dev_utils.Database import Psql
 from UTILS.dev_utils.Objects import Json
 from UTILS.dev_utils.Objects.Sockets import AioSocket
@@ -52,7 +51,7 @@ async def io_serial_handler(name: str, version: str, tag: str, loc: str, comment
 		pin_id = Cache.modules_io.loc[
 			(Cache.modules_io.name == name)
 			& (Cache.modules_io.pin == pin)
-		].id.tolist()
+			].id.tolist()
 		if not pin_id:
 			Log.log(f'pin `{pin}` not found')
 			return
@@ -60,7 +59,7 @@ async def io_serial_handler(name: str, version: str, tag: str, loc: str, comment
 		object_ids = Cache.home_objects.loc[
 			(Cache.home_objects.module_type == 'IO')
 			& (Cache.home_objects.module_io == pin_id[0])
-		].id.tolist()
+			].id.tolist()
 		
 		if not pin_id:
 			Log.log(f'pin `{pin}` not assigned to any object')
@@ -68,6 +67,7 @@ async def io_serial_handler(name: str, version: str, tag: str, loc: str, comment
 		
 		# get trackers that are tracking thease objects
 		for object_id in object_ids:
+			waiter.event_occured(f'IO|change|{object_id}')
 			trackers = sockets_tracker_manager.get_trackers(object_id).id.tolist()
 			if trackers:
 				await broadcast_to_sockets(
@@ -77,12 +77,51 @@ async def io_serial_handler(name: str, version: str, tag: str, loc: str, comment
 				sockets_tracker_manager.untrack(tag=object_id, auto_added=True)
 
 
+async def module_waiter_timeout(event):
+	module_type, tag, object_id = event.split('|')
+	object_id = int(object_id)
+	trackers = sockets_tracker_manager.get_trackers(object_id).id.tolist()
+	if trackers:
+		object_data = Cache.home_objects.loc[Cache.home_objects.id == object_id].to_dict('records')
+		if not object_data:
+			Log.log(f'event {event} object not found')
+			return
+		
+		object_data = object_data[0]
+		
+		if module_type == 'IO':
+			if object_data['module_io'] is None:
+				Log.log(f'event {event} no module_io specified for object')
+				return
+			_id = object_data['module_io']
+		else:
+			Log.log(f'event {event} unknown module type')
+			return
+		
+		if object_data['module_type'] != module_type:
+			Log.log(f'event {event} object module type does not match with event module type')
+			return
+		
+		old_state = Psql('services').read(
+			'modules_io', ['state'],
+			[('id', '=', _id)],
+			auto_connection=True
+		).state.tolist()[0]
+		await broadcast_to_sockets(
+			Json.encode({'type': 'cant_change', 'data': {'object': object_id, 'state': old_state}}),
+			trackers
+		)
+		sockets_tracker_manager.untrack(tag=object_id, auto_added=True)
+
+
 if __name__ == '__main__':
 	serial_manager = SerialManager(io_serial_handler)
+	waiter = dev_utils.WaitForEvents(async_cb=module_waiter_timeout)
 	
 	loop = aio.get_event_loop()
 	loop.run_until_complete(aio.gather(
 		serial_manager.serial_manager(),
-		AioSocket.serve('0.0.0.0', 1234, client_handler, serial_manager=serial_manager)
+		waiter.aio_loop_check_events(),
+		AioSocket.serve('0.0.0.0', 1234, client_handler, serial_manager=serial_manager, waiter=waiter)
 	))
 	loop.run_forever()
