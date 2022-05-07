@@ -143,6 +143,21 @@ def server_first_setup():
 			'io': 'varchar(2)',
 			'state': 'integer default 0',
 		},
+		group_unique=['module', 'pin']
+	)
+	
+	db.create(
+		'home_objects',
+		{
+			'id': 'serial primary key',
+			'room_id': 'integer references services.home_objects(id) on delete cascade',
+			'name': 'varchar',
+			'type': 'varchar',
+			'module_type': 'varchar',
+			'module_io': 'integer references services.modules_io(id) on delete cascade',
+		},
+		group_unique=['room_id', 'name']
+	
 	)
 	
 	# endregion

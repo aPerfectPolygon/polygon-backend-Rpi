@@ -48,15 +48,33 @@ async def io_serial_handler(name: str, version: str, tag: str, loc: str, comment
 			auto_connection=True
 		)
 	elif tag == 'OUTPUT_CHANGED':
-		trackers = sockets_tracker_manager.get_trackers('OUTPUT_CHANGED', str(pin)).id.tolist()
-		if trackers:
-			print(trackers)
-			await broadcast_to_sockets(
-				Json.encode({'type': 'event', 'data': {'event': 'OUTPUT_CHANGED', 'pin': str(pin), 'state': state}}),
-				trackers
-			)
-			sockets_tracker_manager.untrack(tag='OUTPUT_CHANGED', value=str(pin), auto_added=True)
-			print(sockets_tracker_manager.get_trackers('OUTPUT_CHANGED', str(pin)).id.tolist())
+		# get objects assigned to this pin
+		pin_id = Cache.modules_io.loc[
+			(Cache.modules_io.name == name)
+			& (Cache.modules_io.pin == pin)
+		].id.tolist()
+		if not pin_id:
+			Log.log(f'pin `{pin}` not found')
+			return
+		
+		object_ids = Cache.home_objects.loc[
+			(Cache.home_objects.module_type == 'IO')
+			& (Cache.home_objects.module_io == pin_id[0])
+		].id.tolist()
+		
+		if not pin_id:
+			Log.log(f'pin `{pin}` not assigned to any object')
+			return
+		
+		# get trackers that are tracking thease objects
+		for object_id in object_ids:
+			trackers = sockets_tracker_manager.get_trackers(object_id).id.tolist()
+			if trackers:
+				await broadcast_to_sockets(
+					Json.encode({'type': 'changed', 'data': {'object': object_id, 'state': state}}),
+					trackers
+				)
+				sockets_tracker_manager.untrack(tag=object_id, auto_added=True)
 
 
 if __name__ == '__main__':

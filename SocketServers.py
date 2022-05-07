@@ -3,89 +3,16 @@ About:
 -------
 	| client connects
 	| wait for client to send `token`(SeeAlso: Input Models)
-	| ** Note that in case of these types client's queue will become empty and filled with new data
-	|   "payload", "search", "cancel_search"
+	|
+	| ** note that when tracking anything you must untrack it after you`re done working with it **
 	|
 	| sample send: "{"type": "authenticate", "data": "TOKEN"}[END]"
-	| sample receive: "{"type": "symbol", "data": ["xxx"]}[END]"
+	| sample receive: "{"type": "sample", "data": ["xxx"]}[END]"
 	|
-	| type `index` will be sent
-	|   * after payload set/change
-	|   * after cancel search
-	| --------------------------------------
-	| type `symbol` will be sent
-	|   * after payload set/change
-	|   * after search  (with searched data)
-	|   * after cancel search
-	| --------------------------------------
-	| type `change_symbol` will be sent
-	|   * after detecting any change in symbols
-	| --------------------------------------
-	| type `change_index` will be sent
-	|   * after detecting any change in indexes
-
-Parameters:
------------
-	| payloads_data:
-	| 	** dictionary with symbol names as key and different value structure based on payload **
-	| 	tse:
-	| 		index:
-	| 		{
-	| 			"name": str,
-	| 			"chart": [float, ...],
-	| 			"last_close": float,
-	| 			"price": float,
-	| 		}
-	| 		-------------------------------------------------------------
-	| 		symbol:
-	| 		{
-	| 			"name": str,
-	| 			"chart": [float, ...],
-	| 			"ask": float,
-	| 			"bid": float,
-	| 			"last": float,
-	| 			"price_change": float,
-	| 			"session_open": float,
-	| 			"session_close": float,
-	| 		}
-	| 	----------------------------------------------------------------
-	| 	cryptocurrency, global_stocks, forex:
-	| 	{
-	| 		"name": str,
-	| 		"chart": [float, ...],
-	| 		"last_close": float,
-	| 		"price": float
-	| 	}
-	| --------------------------------------------------------------------
-	| 	coins, currencies:  (no index)
-	| 	{
-	| 		"name": str,
-	| 		"buy": float
-	| 		"sell": float
-	| 	}
-	| 	----------------------------------------------------------------
-	| 	dashboard:  (no index)
-	| 	{
-	| 		"name": str,
-	| 		"price": float
-	| 	}
-	| --------------------------------------------------------------------
-	| 	orderbook_nobitex:  (no index)
-	| 	{
-	| 		"name": str,
-	| 		"asks": [[float, float]]
-	| 		"bids": [[float, float]]
-	| 	}
-	| --------------------------------------------------------------------
-	| payloads_index_data:
-	| 	** dictionary with index names as key and below as value **
-	| 	all payloads:
-	| 	{
-	| 		"name": str,
-	| 		"chart": [float, ...],
-	| 		"last_close": float,
-	| 		"price": float,
-	| 	}
+	| type `changed` will be sent
+	|   * after detecting a change in objects that are being tracked
+	| type `changed_error` will be sent
+	|   * after detecting an error in changing an output
 
 
 Input Models:
@@ -96,22 +23,22 @@ Input Models:
 	| 	"data": "TOKEN"
 	| }
 	| -----------------------------------------------
-	| set/change payload
+	| track individual object
 	| {
-	| 	"type": "payload",
-	| 	"data": "cryptocurrency" # can be null (to untrack everything)
+	| 	"type": "track",
+	| 	"data": [1, 2, 3]  # list of object ids
 	| }
 	| -----------------------------------------------
-	| search symbols (can be called without need of calling `payload`) [candleyaar]
+	| untrack individual object
 	| {
-	| 	"type": "search",
-	| 	"data": ["BTC/USDT"]  # must be list
+	| 	"type": "untrack",
+	| 	"data": [1, 2, 3]  # list of object ids (can be null to untrack everything)
 	| }
 	| -----------------------------------------------
-	| cancel search and go back to payload default (if no payload was selected untrack everything)
+	| untrack individual object
 	| {
-	| 	"type": "cancel_search",
-	| 	"data": null  # must be null
+	| 	"type": "change",
+	| 	"data": [[1, 100], [2, 0]]  # list of (object_id, state)
 	| }
 	| -----------------------------------------------
 	| disconnect gracefully
@@ -125,29 +52,18 @@ Input Models:
 
 Output Models:
 --------------
-	| Send all `payloads_data` for connected payload
+	| detected a change in objects that are being tracked
 	| {
-	| 	"type": "symbol",
-	| 	"data": ** list of `payloads_data` values **
+	| 	"type": "changed",
+	| 	"data": {"object": int, "state": int}
 	| }
 	| -----------------------------------------------
-	| Send all `payloads_index_data` for connected payload
+	| detected an error in changing an output
 	| {
-	| 	"type": "index",
-	| 	"data": ** list of `payloads_index_data` values **
+	| 	"type": "changed_error",
+	| 	"data": {"object": int, "state": int}
 	| }
 	| -----------------------------------------------
-	| detected a change in `payloads_index_data`
-	| {
-	| 	"type": "change_index",
-	| 	"data": [ ** value of payloads_index_data ** ]  # length is always 1
-	| }
-	| -----------------------------------------------
-	| detected a change in `payloads_data`
-	| {
-	| 	"type": "change_symbol",
-	| 	"data": [ ** value of payloads_data ** ]  # length is always 1
-	| }
 
 """
 import asyncio as aio
@@ -158,7 +74,7 @@ import datetime as dt
 import pandas as pd
 
 import UTILS.dev_utils.Objects.Sockets as sck_utils
-from UTILS import dev_utils
+from UTILS import dev_utils, Cache
 from UTILS.dev_utils import Log
 from UTILS.dev_utils.Database.Psql import Psql
 from UTILS.dev_utils.Database.main import log as db_log
@@ -167,7 +83,7 @@ from UTILSD import Defaults as djn_def
 
 sockets = pd.DataFrame(columns=['socket', 'name', 'uid'])
 tracker_manager = dev_utils.TrackerManager()
-maximum_user_active_connections = 2
+maximum_user_active_connections = 20
 
 
 class Messages:
@@ -334,41 +250,73 @@ async def client_handler(socket: sck_utils.BasicSocket):
 				break
 			
 			if data['type'] == 'track':
-				tags = data['data'].get('tags', None)
-				pins = data['data'].get('pins', None)
-				if not pins or not tags:
-					socket_log(socket, Messages.bad_input, 'tags or pins is empty', 400, input_data=data)
-				for tag in tags:
-					for pin in pins:
-						tracker_manager.track(socket.name, tag, pin)
+				_home_object_ids = Cache.home_objects.id.tolist()
+				_has_err = False
+				for object_id in data['data']:
+					if object_id not in _home_object_ids:
+						socket_log(socket, Messages.bad_input, f'bad object_id {object_id}', 400, input_data=data)
+						_has_err = True
+						break
+					tracker_manager.track(socket.name, object_id)
+				if _has_err:
+					break
 			elif data['type'] == 'untrack':
-				tags = data['data'].get('tags', None)
-				pins = data['data'].get('pins', None)
-				if tags and pins:
-					for tag in tags:
-						for pin in pins:
-							tracker_manager.untrack(socket.name, tag, pin)
-				elif tags:
-					for tag in tags:
-						tracker_manager.untrack(socket.name, tag)
-				elif pins:
-					for pin in pins:
-						tracker_manager.untrack(socket.name, value=pin)
-				else:
+				if data['data'] is None:
 					tracker_manager.untrack(socket.name)
-			elif data['type'] == 'set_output':
-				for pin in data['data']['settings'].keys():
-					tracker_manager.track(socket.name, 'OUTPUT_CHANGED', pin, True)
-				await socket.kwargs['serial_manager'].io_set_output(
-					data['data']['name'],
-					data['data']['settings']
-				)
-	
+				else:
+					for object_id in data['data']:
+						tracker_manager.untrack(socket.name, object_id)
+			elif data['type'] == 'change':
+				_has_err = False
+				for object_id, state in data['data']:
+					object_data = Cache.home_objects.loc[Cache.home_objects.id == object_id].to_dict('records')
+					if not object_data:
+						socket_log(socket, Messages.bad_input, f'bad object_id {object_id}', 400, input_data=data)
+						_has_err = True
+						break
+						
+					object_data = object_data[0]
+					if object_data['module_type'] == 'IO' and object_data['module_io'] is not None:
+						module_data = Cache.modules_io.loc[
+							Cache.modules_io.id == object_data['module_io']
+						].to_dict('records')
+						if not module_data:
+							socket_log(
+								socket,
+								Messages.bad_input,
+								f'object related module not found {object_id}',
+								400,
+								input_data=data
+							)
+							_has_err = True
+							break
+						module_data = module_data[0]
+						
+						tracker_manager.track(socket.name, object_id, auto_added=True)
+						await socket.kwargs['serial_manager'].io_set_output(
+							module_data['name'], {module_data['pin']: state}
+						)
+					else:
+						socket_log(
+							socket,
+							Messages.bad_input,
+							f'object bad configuration {object_id}',
+							400,
+							input_data=data
+						)
+						_has_err = True
+						break
+				if _has_err:
+					break
+			elif data['type'] == 'disconnect':
+				socket_log(socket, Messages.disconnect, None, 200, input_data=data, no_print=True)
+
+				break
 	except Exception as e:
 		socket_log(socket, Messages.unexpected, f'{e.__class__.__name__}({e})', 400)
 	
 	if not data or data.get('type', None) != 'disconnect':
-		socket_log(socket, Messages.disconnect, None, 200)
+		socket_log(socket, Messages.disconnect, None, 200, no_print=True)
 	
 	sockets = sockets.loc[sockets.name != socket.name]
 	tracker_manager.untrack(socket.name)

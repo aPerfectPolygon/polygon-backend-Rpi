@@ -7,8 +7,9 @@ from UTILS import dev_utils
 log_emails = []
 mail_servers = {}
 translations = {}
+home_objects = pd.DataFrame(columns=['id', 'room_id', 'name', 'type', 'module_type', 'module_io'])
 modules = pd.DataFrame(columns=['id', 'type', 'name'])
-modules_io = pd.DataFrame(columns=['id', 'name', 'pin', 'io'])
+modules_io = pd.DataFrame(columns=['id', 'module', 'name', 'pin', 'io'])
 
 
 def update_translations():
@@ -24,6 +25,7 @@ def update_translations():
 def fill_cache():
 	global log_emails
 	global mail_servers
+	global home_objects
 	global modules
 	global modules_io
 	
@@ -37,15 +39,16 @@ def fill_cache():
 	mail_servers = {x['name']: x for x in db.read('mail_servers', '*').to_dict(orient='records')}
 	
 	# fill modules
-	modules = db.read('modules', ['id', 'type', 'name'], schema='services')
+	db.schema = 'services'
+	home_objects = db.read('home_objects', ['id', 'room_id', 'name', 'type', 'module_type', 'module_io'])
+	modules = db.read('modules', ['id', 'type', 'name'])
 	modules_io = db.read(
 		'modules',
-		['main_table.id', 'name', 'pin', 'io'],
+		['io.id', 'module', 'name', 'pin', 'io'],
 		[('type', '=', 'IO')],
 		joins=[('inner', 'services.modules_io', 'io', 'main_table.id', '=', 'io.module')],
-		schema='services'
 	)
-	
+
 	db.close()
 
 

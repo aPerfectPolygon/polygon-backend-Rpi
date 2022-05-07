@@ -75,22 +75,20 @@ class TrackerManager:
 		if auto_added is not None:
 			conds &= (self.trackers.auto_added == auto_added)
 		
-		self.trackers = self.trackers.loc[~conds]
+		self.trackers = self.trackers.loc[~conds].reset_index(drop=True)
 	
 	def track(self, tracker_id: str, tag: str, value: str = None, auto_added: bool = None):
 		# check if it already exists
-		conds = (self.trackers.tag == tag)
+		conds = (self.trackers.id == tracker_id) & (self.trackers.tag == tag)
 		if value is not None:
 			conds &= (self.trackers.value == value)
-		if auto_added is not None:
-			conds &= (self.trackers.auto_added == auto_added)
 		
 		if self.trackers.loc[conds].empty:
 			self.trackers = self.trackers.append(
 				pd.DataFrame(
 					[[tracker_id, tag, value, auto_added]], columns=['id', 'tag', 'value', 'auto_added']
 				)
-			)
+			).reset_index(drop=True)
 	
 	def get_trackers(self, tag: str, value: str = None):
 		conds = (self.trackers.tag == tag)
