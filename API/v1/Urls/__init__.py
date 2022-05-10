@@ -104,6 +104,12 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 		),
 		
 		# endregion
+		# region Home
+		base_info.path_generator(
+			'Home/objects',
+			v.Home.objects,
+		),
+		# endregion
 	]
 
 

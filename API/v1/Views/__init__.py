@@ -1,2 +1,2 @@
 from .main import *
-from . import User
+from . import User, Home

@@ -10,6 +10,7 @@ translations = {}
 home_objects = pd.DataFrame(columns=['id', 'room_id', 'name', 'type', 'module_type', 'module_io'])
 modules = pd.DataFrame(columns=['id', 'type', 'name'])
 modules_io = pd.DataFrame(columns=['id', 'module', 'name', 'pin', 'io'])
+home_objects_api = []
 
 
 def update_translations():
