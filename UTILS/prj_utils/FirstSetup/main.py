@@ -125,41 +125,47 @@ def server_first_setup():
 		},
 	)
 	
-	db.create(
-		'modules',
-		{
-			'id': 'serial primary key',
-			'type': 'varchar',
-			'name': 'varchar',
-		},
-	)
+	if not db.table_exists('modules'):
+		db.create(
+			'modules',
+			{
+				'id': 'serial primary key',
+				'type': 'varchar',
+				'name': 'varchar',
+			},
+		)
+		db.insert('modules', pd.read_excel('modules.xlsx'))
 	
-	db.create(
-		'modules_io',
-		{
-			'id': 'serial primary key',
-			'module': 'integer references services.modules(id) on delete cascade',
-			'pin': 'integer',
-			'io': 'varchar(2)',
-			'state': 'integer default 0',
-		},
-		group_unique=['module', 'pin']
-	)
-	
-	db.create(
-		'home_objects',
-		{
-			'id': 'serial primary key',
-			'room_id': 'integer references services.home_objects(id) on delete cascade',
-			'name': 'varchar',
-			'type': 'varchar',
-			'module_type': 'varchar',
-			'module_io': 'integer references services.modules_io(id) on delete cascade',
-		},
-		group_unique=['room_id', 'name']
-	
-	)
-	
+	if not db.table_exists('modules_io'):
+		db.create(
+			'modules_io',
+			{
+				'id': 'serial primary key',
+				'module': 'integer references services.modules(id) on delete cascade',
+				'pin': 'integer',
+				'io': 'varchar(2)',
+				'state': 'integer default 0',
+			},
+			group_unique=['module', 'pin']
+		)
+		db.insert('modules_io', pd.read_excel('modules_io.xlsx'))
+
+	if not db.table_exists('home_objects'):
+		db.create(
+			'home_objects',
+			{
+				'id': 'serial primary key',
+				'room_id': 'integer references services.home_objects(id) on delete cascade',
+				'name': 'varchar',
+				'type': 'varchar',
+				'module_type': 'varchar',
+				'module_io': 'integer references services.modules_io(id) on delete cascade',
+			},
+			group_unique=['room_id', 'name']
+		
+		)
+		db.insert('home_objects', pd.read_excel('home_objects.xlsx'))
+
 	# endregion
 	
 	# region logs
