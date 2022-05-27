@@ -70,6 +70,7 @@ def handle_error(func_name, on_error):
 class BasicSocket:
 	def __init__(self, mode, **kwargs):
 		self.uid = None
+		self.platform = 'None'
 		
 		# class variables
 		self._queue = []

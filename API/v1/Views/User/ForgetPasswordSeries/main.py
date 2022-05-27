@@ -8,7 +8,7 @@ def send(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 
 	About:
 	-----
-	send forget password token to user via email
+	send forget password token to user
 
 	Input:
 	-----
@@ -69,7 +69,7 @@ def verify(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 	-----
 	| {
 	| 	"email": "test@gmail.com",
-	| 	"token": "12345,
+	| 	"token": "12345",
 	| }
 	| ------------------------------------------------------------
 

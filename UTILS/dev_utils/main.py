@@ -167,6 +167,64 @@ class AioResponseError:
 	is_success = False
 
 
+class CTree:
+	def __init__(
+			self,
+			name: str,
+			data: ty.Any,
+			count: int = 0,
+			parent: object = None,
+			children: dict = None
+	):
+		self.parent = parent
+		self.name = name
+		self.data = data
+		self.count = count
+		
+		if children is None:
+			children = {}
+		else:
+			for k, v in children.items():
+				children[k].parent = self
+		self.children = children
+	
+	def __repr__(self):
+		return f'name: "{self.name}" count: {self.count}'
+	
+	def child(self, name):
+		if name not in self.children:
+			raise ValueError(f'child "{name}" not found')
+		return self.children[name]
+	
+	def add_child(self, name: str, data: ty.Any, count: int = 0):
+		self.children.update({name: CTree(name, data, count, self)})
+	
+	def update_counts_based_on_childs(self):
+		if self.children:
+			self.count = sum([c.update_counts_based_on_childs() for c in self.children.values()])
+		return self.count
+	
+	@property
+	def tree(self):
+		return {
+			'name': self.name,
+			'data': self.data,
+			'count': self.count,
+			'children': {k: v.tree for k, v in self.children.items()}
+		}
+	
+	@property
+	def piechart(self):
+		# noinspection PyUnresolvedReferences
+		return {
+			'name': self.name,
+			'data': self.data,
+			'count': self.count,
+			'percent': 100.0 if self.parent is None else round((100 * self.count) / self.parent.count, 2),
+			'children': {k: v.piechart for k, v in self.children.items()}
+		}
+
+
 async def aio_safe_request(
 		method: str,
 		url: str,
@@ -391,7 +449,7 @@ def safe_request(
 			return return_response(request_response)
 		else:
 			Log.log(
-				f'[BadStatusCode] `{request_response.status_code}` not in {expected_codes} `{request_response.text[:10]}` {url}')
+				f'[BadStatusCode] `{request_response.status_code}` not in {expected_codes} `{request_response.text[:50]}` {url}')
 			ti.sleep(1)
 	return return_response(request_response)
 
@@ -515,8 +573,8 @@ def compare_dfs(df_1: pd.DataFrame, df_2: pd.DataFrame, exclude_from_new: list =
 	df_1 = df_1.loc[df_2.index]
 	
 	# get changed_data
-	_cmp = df_1 == df_2
-	changed_data = _cmp[_cmp.isin([False]).any(axis=1)]
+	_cmp = ((df_1 != df_1) & (df_2 != df_2)) | (df_1 == df_2)
+	changed_data = _cmp[(_cmp == False).any(axis=1)]
 	
 	# join changed data with old and new data
 	all_data = changed_data.join(df_2, rsuffix='_new').join(df_1, rsuffix='_old')

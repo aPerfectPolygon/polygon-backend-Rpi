@@ -12,7 +12,6 @@ import pandas as pd
 from UTILS.dev_utils.Database.Psql.main import Psql
 from UTILS.prj_utils.FirstSetup import git_puller, sync_venv
 
-
 __prj_root = str(prj_def.project_root)
 files_translations = __prj_root[:__prj_root.find('Project/')] + 'Files/translations.xlsx'
 if os.path.exists(files_translations):
@@ -20,7 +19,7 @@ if os.path.exists(files_translations):
 	translations = pd.read_excel('translations.xlsx')  # removeme
 else:
 	translations = pd.read_excel('translations.xlsx')
-	
+
 
 def supervisor_config():
 	dev_utils.supervisor_create_or_restart_service(
@@ -34,7 +33,7 @@ def supervisor_config():
 	)
 
 
-def server_first_setup():
+def server_first_setup(**kwargs):
 	db = Psql('', open=True)
 	if db.conn is None:
 		db.create_user_with_default_user()
@@ -47,6 +46,20 @@ def server_first_setup():
 	# region constants
 	db.schema = 'constants'
 	db.create_schema()
+	
+	if db.table_exists('translations'):
+		db.drop('translations')
+	
+	db.create(
+		'translations',
+		{
+			'groups': 'text[]',
+			'key': 'varchar unique',
+			**{lang: 'varchar' for lang in prj_def.Languages.all}
+		},
+		ts_columns='created',
+	)
+	db.insert('translations', translations)
 	
 	if not db.table_exists('mail_servers'):
 		db.create(
@@ -91,20 +104,6 @@ def server_first_setup():
 			)
 		)
 	
-	if db.table_exists('translations'):
-		db.drop('translations')
-	
-	db.create(
-		'translations',
-		{
-			'groups': 'text[]',
-			'key': 'varchar unique',
-			**{lang: 'varchar' for lang in prj_def.Languages.all}
-		},
-		ts_columns='created',
-	)
-	db.insert('translations', translations)
-	
 	# endregion
 	
 	# region services
@@ -123,6 +122,34 @@ def server_first_setup():
 			'mail_server': 'varchar',
 			'kwargs': 'json',
 		},
+	)
+	
+	db.create(
+		'notification_planner',
+		{
+			'id': 'serial primary key',
+			'send_at': 'bigint',
+			'server_mode': 'varchar(4)',
+			'important': 'bool default false',
+			'receivers': 'text[] default null',
+			'topics': 'text[] default null',
+			'title': 'varchar',
+			'body': 'varchar',
+			'args_title': 'text[] default array[]::text[]',
+			'args_body': 'text[] default array[]::text[]',
+			'target': 'integer default 0',
+			'image': 'varchar default null',
+			'icon': 'varchar default null',
+			'url': 'varchar default null',
+			'web_url': 'varchar default null',
+			'choices': 'text[] default null',
+			'right_choice': 'integer default null',
+			'inventory_all': 'bool default false',
+			'do_send': 'bool default true',
+			'do_track': 'bool default null',
+			'popup_id': 'integer default null',
+		},
+		ts_columns='created',
 	)
 	
 	if not db.table_exists('modules'):
@@ -149,7 +176,7 @@ def server_first_setup():
 			group_unique=['module', 'pin']
 		)
 		db.insert('modules_io', pd.read_excel('modules_io.xlsx'))
-
+	
 	if not db.table_exists('home_objects'):
 		db.create(
 			'home_objects',
@@ -165,7 +192,7 @@ def server_first_setup():
 		
 		)
 		db.insert('home_objects', pd.read_excel('home_objects.xlsx'))
-
+	
 	# endregion
 	
 	# region logs
@@ -201,17 +228,44 @@ def server_first_setup():
 	db.schema = 'users_data'
 	db.create_schema()
 	create_users_data = True
-	if not db.table_exists('account_account'):
+	if not db.table_exists('account_account') or kwargs.pop('migrations'):
 		root = str(prj_def.project_root).replace('\\', '/')
 		manage_py = f'{root}/manage.py'
 		
 		if os.path.exists(manage_py):
-			os.system(f'. {root}/venv/bin/activate && python {manage_py} makemigrations && python {manage_py} migrate')
+			os.system(f'. {root}/venv/bin/activate && python {manage_py} makemigrations && python {manage_py} makemigrations account && python {manage_py} migrate')
 		else:
 			Log.log('could not find manage.py file to create migrations')
 			create_users_data = False
 	
 	if create_users_data:
+		db.create(
+			'popup',
+			{
+				'id': 'serial primary key',
+				'title': 'varchar(200)',
+				'texts': 'text[] default null',
+				'images': 'json default null',
+				'buttons': 'json default null',
+				'quiz_id': 'integer default null',
+				'is_active': 'boolean default true',
+				'users_seen': 'integer[] default array[]::integer[]',
+				'uids': 'integer[] default null',
+				'apis': 'text[] default null',
+			},
+			ts_columns='created',
+		)
+		
+		db.create(
+			'ip_blocked',
+			{
+				'id': 'serial primary key',
+				'ip': 'varchar',
+				'block_until': 'timestamp',
+			},
+			ts_columns='created'
+		)
+		
 		db.create(
 			'tokens_email',
 			{
@@ -235,7 +289,7 @@ def server_first_setup():
 			ts_columns='created'
 		)
 		
-		for platform in ['App', 'Web', 'Test']:
+		for platform in ['App', 'Web', 'Test', 'testnet']:
 			db.create(
 				f'users_token_{platform}',
 				{
@@ -250,10 +304,8 @@ def server_first_setup():
 			'users_info',
 			{
 				'id': 'serial primary key',
+				'birth_date': 'bigint default null',
 				'uid': 'integer  references users_data.account_account(id) on delete cascade',
-				
-				'lang': "varchar(10) default 'en-us'",
-				'auth_email': "boolean default false",
 			},
 			ts_columns=['created', 'modified']
 		)
@@ -324,6 +376,18 @@ def server_first_setup():
 			ts_columns='created',
 			set_index=True,
 		)
+		
+		db.create(
+			'users_popup_clicks',
+			{
+				'id': 'serial primary key',
+				'uid': 'integer  references users_data.account_account(id) on delete cascade',
+				'popup': 'integer  references users_data.popup(id) on delete cascade',
+				'image_id': 'integer',
+				
+			},
+			ts_columns='created',
+		)
 	
 	# endregion
 	
@@ -339,4 +403,4 @@ if __name__ == '__main__':
 	if 'GitPull' in args:
 		git_puller.pull()
 	
-	server_first_setup()
+	server_first_setup(migrations='migrations' in args)

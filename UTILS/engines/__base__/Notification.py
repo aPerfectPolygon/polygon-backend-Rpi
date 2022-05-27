@@ -15,29 +15,25 @@ class Firebase:
 	class Topic:
 		@staticmethod
 		def assign(topic: str, tokens: ty.List[str]):
-			dev_utils.safe_request(
-				'post',
-				'https://iid.googleapis.com/iid/v1:batchAdd',
-				{
-					'to': topic,
-					'registration_ids': tokens
-				},
-				headers=Firebase.headers,
-				expected_codes=[200]
-			)
+			for r in List.split(tokens, count_per_item=1000):
+				dev_utils.safe_request(
+					'post',
+					'https://iid.googleapis.com/iid/v1:batchAdd',
+						{'to': topic, 'registration_tokens': r},
+					headers=Firebase.headers,
+					expected_codes=[200]
+				)
 
 		@staticmethod
 		def unassign(topic: str, tokens: ty.List[str]):
-			dev_utils.safe_request(
-				'post',
-				'https://iid.googleapis.com/iid/v1:batchRemove',
-				{
-					'to': topic,
-					'registration_ids': tokens
-				},
-				headers=Firebase.headers,
-				expected_codes=[200]
-			)
+			for r in List.split(tokens, count_per_item=1000):
+				dev_utils.safe_request(
+					'post',
+					'https://iid.googleapis.com/iid/v1:batchRemove',
+					{'to': topic, 'registration_tokens': r},
+					headers=Firebase.headers,
+					expected_codes=[200]
+				)
 
 	@staticmethod
 	def _prepare_data(

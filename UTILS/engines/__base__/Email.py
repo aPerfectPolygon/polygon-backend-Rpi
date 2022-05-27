@@ -51,7 +51,10 @@ def _send(
 				msg.attach(MIMEText(html, 'html'))
 			elif template:
 				with open(f'{templates_path}/{template}', 'r', encoding='utf-8') as f:
-					msg.attach(MIMEText(markdown.markdown(f.read().format(**template_content)), 'html'))
+					__data = f.read()
+					if template_content:
+						__data = __data.format(**template_content)
+					msg.attach(MIMEText(markdown.markdown(__data), 'html'))
 			
 			_server = smtplib.SMTP(host=server, port=port)
 			_server.starttls()

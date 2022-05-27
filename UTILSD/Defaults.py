@@ -1,14 +1,16 @@
 import copy
 
-from UTILS.prj_utils import Defaults as prj_def
 from UTILS import Cache
+from UTILS.prj_utils import Defaults as prj_def
 
 
 class Messages:
 	# region main
 	ok = '[OK]'
+	not_found = '[NOT FOUND]'
 	unexpected = '[UNEXPECTED ERROR]'
 	bad_input = '[BAD INPUT]'
+	bad_recaptcha = '[BAD RECAPTCHA]'
 	regex_error = '[REGEX ERROR]'
 	market_unavailable = '[MARKET UNAVAILABLE]'
 	not_found_404 = '[404 Not Found]'
@@ -33,11 +35,19 @@ class Messages:
 	account_not_found = '[ACCOUNT NOT FOUND]'
 	referral_not_found = '[REFERRAL NOT FOUND]'
 	not_available = '[NOT AVAILABLE]'
+	ip_blocked = '[IP BLOCKED]'
+	email_not_found = '[EMAIL NOT FOUND]'
+	user_logged_in = '[USER LOGGED IN]'
+	no_password = '[NO PASSWORD]'
 	# endregion
 	
 	# region change password
 	bad_old_password = '[BAD OLD PASSWORD]'
 	repetitive_password = '[REPETITIVE_PASSWORD]'
+	# endregion
+	
+	# region ProfileUpdate
+	username_already_exists = '[USERNAME ALREADY EXISTS]'
 	# endregion
 	
 	pass
@@ -80,8 +90,17 @@ class Fields:
 		'suspended': 'SUSPENDED',
 	}
 	regex_map = {
+		'first_name': _r(
+			r"^[\u0621-\u0628\u062A-\u063A\u0641-\u0642\u0644-\u0648\u064E-\u0651\u0655\u067E\u0686\u0698\u0020\u2000-\u200F\u2028-\u202F\u06A9\u06AF\u06BE\u06CC\u0629\u0643\u0649-\u064B\u064D\u06D5A-Za-z]{1,30}$",
+			'len<30 && cant contain illegal characters'
+		),
+		'last_name': _r(
+			r"^[\u0621-\u0628\u062A-\u063A\u0641-\u0642\u0644-\u0648\u064E-\u0651\u0655\u067E\u0686\u0698\u0020\u2000-\u200F\u2028-\u202F\u06A9\u06AF\u06BE\u06CC\u0629\u0643\u0649-\u064B\u064D\u06D5A-Za-z]{1,30}$",
+			'len<30 && cant contain illegal characters'
+		),
 		'username': _r(
-			"^[a-zA-Z](?=.{5,20}$)(?![_.])(?!polygon_)(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$",  # signup/edit-profile regex
+			"^[a-zA-Z](?=.{5,20}$)(?![_.])(?!polygon_)(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$",
+			# signup/edit-profile regex
 			'not standard',
 			regex2="^[a-zA-Z](?=.{5,20}$)(?![_.])(?!.*[_.]{2})[a-zA-Z0-9._]+(?<![_.])$"  # login regex
 		),
@@ -103,6 +122,60 @@ class Fields:
 app_force_version = 1
 app_current_version = 1
 templates = {
+	'email': {
+		'already_verified': {
+			prj_def.Languages.fa: 'email/already_verified/fa-ir.html',
+			prj_def.Languages.en: 'email/already_verified/en-us.html',
+		},
+		'already_used': {
+			prj_def.Languages.fa: 'email/already_used/fa-ir.html',
+			prj_def.Languages.en: 'email/already_used/en-us.html',
+		},
+		'expired': {
+			prj_def.Languages.fa: 'email/expired/fa-ir.html',
+			prj_def.Languages.en: 'email/expired/en-us.html',
+		},
+		'to_confirm': {
+			prj_def.Languages.fa: 'email/to_confirm/fa-ir.html',
+			prj_def.Languages.en: 'email/to_confirm/en-us.html',
+		},
+		'confirmed': {
+			prj_def.Languages.fa: 'email/confirmed/fa-ir.html',
+			prj_def.Languages.en: 'email/confirmed/en-us.html',
+		},
+	},
+	'forget_password': {
+		'send': {
+			'success': {
+				prj_def.Languages.fa: 'forget_password/send/success/fa-ir.html',
+				prj_def.Languages.en: 'forget_password/send/success/en-us.html',
+			}
+		},
+		'change': {
+			'success': {
+				prj_def.Languages.fa: 'forget_password/change/success/fa-ir.html',
+				prj_def.Languages.en: 'forget_password/change/success/en-us.html',
+			}
+		},
+		'verify': {
+			'success': {
+				prj_def.Languages.fa: 'forget_password/verify/success/fa-ir.html',
+				prj_def.Languages.en: 'forget_password/verify/success/en-us.html',
+			},
+			'already_used': {
+				prj_def.Languages.fa: 'forget_password/verify/already_used/fa-ir.html',
+				prj_def.Languages.en: 'forget_password/verify/already_used/en-us.html',
+			},
+			'already_verified': {
+				prj_def.Languages.fa: 'forget_password/verify/already_verified/fa-ir.html',
+				prj_def.Languages.en: 'forget_password/verify/already_verified/en-us.html',
+			},
+			'expired': {
+				prj_def.Languages.fa: 'forget_password/verify/expired/fa-ir.html',
+				prj_def.Languages.en: 'forget_password/verify/expired/en-us.html',
+			}
+		}
+	},
 	'main': {
 		'error': {
 			prj_def.Languages.fa: 'main/error/fa-ir.html',
@@ -112,37 +185,15 @@ templates = {
 			prj_def.Languages.fa: 'main/success/fa-ir.html',
 			prj_def.Languages.en: 'main/success/en-us.html',
 		},
-		'forward': {
-			prj_def.Languages.fa: 'main/forward/fa-ir.html',
-			prj_def.Languages.en: 'main/forward/en-us.html',
-		}
 	},
-	'email': {
-		'signupSeries': {
-			'signup': {
-				prj_def.Languages.fa: 'email/signupSeries/signup/fa-ir.html',
-				prj_def.Languages.en: 'email/signupSeries/signup/en-us.html',
-			},
-			'welcome': {
-				prj_def.Languages.fa: 'email/signupSeries/welcome/fa-ir.html',
-				prj_def.Languages.en: 'email/signupSeries/welcome/en-us.html',
-			},
-		},
-		'forgetPasswordSeries': {
-			'to_change': {
-				prj_def.Languages.fa: 'email/forgetPasswordSeries/to_change/fa-ir.html',
-				prj_def.Languages.en: 'email/forgetPasswordSeries/to_change/en-us.html',
-			},
-			'changed': {
-				prj_def.Languages.fa: 'email/forgetPasswordSeries/changed/fa-ir.html',
-				prj_def.Languages.en: 'email/forgetPasswordSeries/changed/en-us.html',
-			},
-		}
-	}
 }
-links = {}
+links = {
+	'api_domain': prj_def.api_domain
+}
 
-allowed_hosts = ['127.0.0.1', 'localhost', prj_def.host.split(':')[0]]
+allowed_hosts = [
+	'127.0.0.1', 'localhost', prj_def.host
+]
 if prj_def.ip not in allowed_hosts:
 	allowed_hosts.append(prj_def.ip)
 
@@ -162,3 +213,6 @@ descriptions_user_info_field_translator = copy.deepcopy(
 
 social_urls = []
 support_email = 'elyasnz.1999@gmail.com'
+
+recaptcha_hosts = []
+recaptcha_package_names = []

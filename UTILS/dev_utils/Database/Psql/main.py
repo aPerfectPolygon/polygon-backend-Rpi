@@ -1,3 +1,7 @@
+import warnings
+
+warnings.simplefilter(action='ignore', category=UserWarning)
+
 import configparser
 import os
 import typing as ty
@@ -156,9 +160,9 @@ class Psql:
 		pass
 	
 	@staticmethod
-	def backup():
-		sibling = Path(__file__).parent.parent.parent.parent.parent.parent.parent  # project sibling directory
-		destination = str(sibling / fr'dbBackup/psql')
+	def backup(destination=None):
+		if destination is None:
+			destination = Path('/root/dbBackup/psql')
 		os.makedirs(destination, exist_ok=True)
 		
 		dirs = sorted(os.listdir(destination), reverse=True)
@@ -170,17 +174,31 @@ class Psql:
 		destination += f'/{t_now}'
 		os.makedirs(destination, exist_ok=True)
 		
-		# todo
-		pass
+		command = f'pg_dump --dbname=postgresql://%s:%s@%s:%s/%s ' % (
+			Databases['polygonStorage']['user'],
+			Databases['polygonStorage']['pass'],
+			Databases['polygonStorage']['host'],
+			Databases['polygonStorage']['port'],
+			Databases['polygonStorage']['name'],
+			destination,
+		)
+		os.system(command)
 	
 	@staticmethod
-	def restore():
-		sibling = Path(__file__).parent.parent.parent.parent.parent.parent.parent  # project sibling directory
-		destination = sibling / r'dbBackup/psql'
+	def restore(destination=None):
+		if destination is None:
+			destination = Path('/root/dbBackup/psql')
 		destination = str(destination / sorted(os.listdir(destination), reverse=True)[0])
 		
-		# todo
-		pass
+		command = f'psql --dbname=postgresql://%s:%s@%s:%s/%s -f %s/polygonStorage.sql' % (
+			Databases['polygonStorage']['user'],
+			Databases['polygonStorage']['pass'],
+			Databases['polygonStorage']['host'],
+			Databases['polygonStorage']['port'],
+			Databases['polygonStorage']['name'],
+			destination,
+		)
+		os.system(command)
 	
 	def handle_kwargs(self, kwargs) -> dict:
 		return {
@@ -189,17 +207,18 @@ class Psql:
 			'print_query': kwargs.get('print_query', False),
 			'get_query': kwargs.get('get_query', False),
 			'dt2ts': kwargs.get('dt2ts', False),
-			'timezone': kwargs.get('timezone', None),  # by-default all tz-aware datetimes are converted to tz-naive
-			'limit_offset': kwargs.get('limit_offset', None),
-			'order_by': kwargs.get('order_by', None),
+			'timezone': kwargs.get('timezone'),  # by-default all tz-aware datetimes are converted to tz-naive
+			'limit_offset': kwargs.get('limit_offset'),
+			'order_by': kwargs.get('order_by'),
 			'ignore_conflict': kwargs.get('ignore_conflict', False),
-			'returning': kwargs.get('returning', None),
+			'returning': kwargs.get('returning'),
 			'if_exists': kwargs.get('if_exists', True),
-			'ts_columns': kwargs.get('ts_columns', None),
+			'ts_columns': kwargs.get('ts_columns'),
 			'custom_types': kwargs.get('custom_types', {}),
+			'custom_read_types': kwargs.get('custom_read_types', None),
 			'group_unique': kwargs.get('group_unique', []),
-			'null_type_casting': kwargs.get('null_type_casting', None),
-			'group_by': kwargs.get('group_by', None),
+			'null_type_casting': kwargs.get('null_type_casting'),
+			'group_by': kwargs.get('group_by'),
 		}
 	
 	def get_query(self, query, params, do_print=False) -> ty.Optional[str]:
@@ -212,14 +231,21 @@ class Psql:
 	def get_cols_from_cur(self) -> tuple:
 		return tuple(map(lambda x: x[0], self.cur.description))
 	
-	def read_from_cursor(self, dt2ts: bool, timezone: str = None) -> pd.DataFrame:
+	def read_from_cursor(self, dt2ts: bool, timezone: str = None, custom_types: dict = None) -> pd.DataFrame:
 		timezone = 'Asia/Tehran' if timezone == 'local' else timezone
 		res = pd.DataFrame(self.cur.fetchall(), columns=self.get_cols_from_cur())
+		res.custom_dtypes = {}
 		for col in res.columns:
 			if is_datetime(res[col]):
 				res[col] = Time.series_tz_convert(res[col], timezone)
 				if dt2ts:
 					res[col] = Time.series_ts_from_dt(res[col])
+			if custom_types is not None and col in custom_types:
+				res.custom_dtypes.update({col: custom_types[col]})
+				if custom_types[col] == 'int':
+					res[col] = res[col].astype('Int64').replace({np.nan: None})
+				elif custom_types[col] == 'float' or custom_types[col] == 'timestamp':
+					res[col] = res[col].astype('float64').replace({np.nan: None})
 		
 		return res
 	
@@ -294,10 +320,10 @@ class Psql:
 			for i, item in enumerate(cols):
 				if dev_utils.is_itterable(item):
 					i1, i2 = item
-					if not ('.' in i1 or '->' in i1 or ':' in i1 or ' ' in i1):
+					if not ('.' in i1 or '->' in i1 or ':' in i1 or ' ' in i1 or '(' in i1):
 						i1 = f'"{item}"'
 					cols[i] = f'{i1} as {i2}'
-				elif not ('.' in item or '->' in item or ':' in item or ' ' in item):
+				elif not ('.' in item or '->' in item or ':' in item or ' ' in item or '(' in item):
 					cols[i] = f'"{item}"'
 			
 			if kwargs.pop('do_join', True):
@@ -423,9 +449,9 @@ class Psql:
 		"""
 		if not gb:
 			return
-
+		
 		return f"group by {self._handle_columns(gb)}"
-
+	
 	@staticmethod
 	def _handle_ts_columns(ts_columns: ty.Union[str, ty.List[str]], **kwargs) -> ty.Optional[dict]:
 		ts_columns = ts_columns if dev_utils.is_itterable(ts_columns) else [ts_columns]
@@ -514,10 +540,12 @@ class Psql:
 			self.open()
 	
 	def create_user_with_default_user(self):
-		os.system(f""" psql "host={self.db_properties['host']} port={self.db_properties['port']} user='{DatabseUsers['default']['user']}' password='{DatabseUsers['default']['pass']}' dbname=template1" -c "create user {self.db_properties['user']} superuser createdb createrole replication bypassrls encrypted password '{self.db_properties['pass']}'" """)
-		
+		os.system(
+			f""" psql "host={self.db_properties['host']} port={self.db_properties['port']} user='{DatabseUsers['default']['user']}' password='{DatabseUsers['default']['pass']}' dbname=template1" -c "create user {self.db_properties['user']} superuser createdb createrole replication bypassrls encrypted password '{self.db_properties['pass']}'" """)
+	
 	def create_db(self):
-		os.system(f""" psql "host={self.db_properties['host']} port={self.db_properties['port']} user='{self.db_properties['user']}' password='{self.db_properties['pass']}' dbname=template1" -c 'create database "{self.db_properties['name']}" with owner "{self.db_properties['user']}"' """)
+		os.system(
+			f""" psql "host={self.db_properties['host']} port={self.db_properties['port']} user='{self.db_properties['user']}' password='{self.db_properties['pass']}' dbname=template1" -c 'create database "{self.db_properties['name']}" with owner "{self.db_properties['user']}"' """)
 	
 	def create(self, table: str, columns: ty.Dict[str, str], **kwargs) -> bool:
 		"""
@@ -594,11 +622,11 @@ class Psql:
 			# timezone='gmt',
 		)
 		"""
-		schema, auto_connection, print_query, get_query, ct, ic, returning, dt2ts, tz = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, ct, ic, returning, dt2ts, tz, crt = Dict.multiselect(
 			self.handle_kwargs(kwargs),
 			[
 				'schema', 'auto_connection', 'print_query', 'get_query', 'custom_types',
-				'ignore_conflict', 'returning', 'dt2ts', 'timezone'
+				'ignore_conflict', 'returning', 'dt2ts', 'timezone', 'custom_read_types'
 			]
 		).values()
 		
@@ -643,7 +671,7 @@ class Psql:
 			self.cur.execute(_q, _p)
 			self.conn.commit()
 			if returning:
-				res = self.read_from_cursor(dt2ts, tz)
+				res = self.read_from_cursor(dt2ts, tz, crt)
 		except Exception as e:
 			Log.log(f'[{self.db_name}]', location_depth=3, class_name='myDb', exc=e, query=self.get_query(_q, _p))
 			self.reopen()
@@ -661,11 +689,11 @@ class Psql:
 			joins: ty.List[tuple] = None,
 			**kwargs
 	) -> pd.DataFrame:
-		schema, auto_connection, print_query, get_query, dt2ts, tz, lo, ob, gb = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, dt2ts, tz, lo, ob, gb, crt = Dict.multiselect(
 			self.handle_kwargs(kwargs),
 			[
 				'schema', 'auto_connection', 'print_query', 'get_query',
-				'dt2ts', 'timezone', 'limit_offset', 'order_by', 'group_by'
+				'dt2ts', 'timezone', 'limit_offset', 'order_by', 'group_by', 'custom_read_types'
 			]
 		).values()
 		
@@ -697,7 +725,7 @@ class Psql:
 		# add group by
 		if gb:
 			_q += f'\n{gb}'
-
+		
 		# add order by
 		if ob:
 			_q += f'\n{ob}'
@@ -713,7 +741,7 @@ class Psql:
 				# noinspection PyTypeChecker
 				return self.get_query(_q, _p, False)
 			self.cur.execute(_q, _p)
-			result = self.read_from_cursor(dt2ts, tz)
+			result = self.read_from_cursor(dt2ts, tz, crt)
 		except Exception as e:
 			Log.log(f'[{self.db_name}]', location_depth=3, class_name='myDb', exc=e, query=self.get_query(_q, _p))
 			result = pd.DataFrame()
@@ -725,11 +753,11 @@ class Psql:
 		return result
 	
 	def update(self, table: str, data: pd.DataFrame, conditions: ty.List[tuple], **kwargs) -> pd.DataFrame:
-		schema, auto_connection, print_query, get_query, ct, ts_columns, tz, returning, dt2ts = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, ct, ts_columns, tz, returning, dt2ts, crt = Dict.multiselect(
 			self.handle_kwargs(kwargs),
 			[
 				'schema', 'auto_connection', 'print_query', 'get_query', 'custom_types',
-				'ts_columns', 'timezone', 'returning', 'dt2ts'
+				'ts_columns', 'timezone', 'returning', 'dt2ts', 'custom_read_types'
 			]
 		).values()
 		if not self._check_connection(auto_connection):
@@ -777,7 +805,7 @@ class Psql:
 			self.cur.execute(_q, _p)
 			self.conn.commit()
 			if returning:
-				result = self.read_from_cursor(dt2ts, tz)
+				result = self.read_from_cursor(dt2ts, tz, crt)
 		except Exception as e:
 			Log.log(f'[{self.db_name}]', location_depth=3, class_name='myDb', exc=e, query=self.get_query(_q, _p))
 			self.reopen()
@@ -794,9 +822,12 @@ class Psql:
 		Example:
 			db.delete('test', [('str_tst', '=', 'x')])
 		"""
-		schema, auto_connection, print_query, get_query, tz, returning, dt2ts = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, tz, returning, dt2ts, crt = Dict.multiselect(
 			self.handle_kwargs(kwargs),
-			['schema', 'auto_connection', 'print_query', 'get_query', 'timezone', 'returning', 'dt2ts']
+			[
+				'schema', 'auto_connection', 'print_query', 'get_query',
+				'timezone', 'returning', 'dt2ts', 'custom_read_types'
+			]
 		).values()
 		
 		if not self._check_connection(auto_connection):
@@ -827,7 +858,7 @@ class Psql:
 			self.cur.execute(_q, _p)
 			self.conn.commit()
 			if returning:
-				result = self.read_from_cursor(dt2ts, tz)
+				result = self.read_from_cursor(dt2ts, tz, crt)
 		except Exception as e:
 			Log.log(f'[{self.db_name}]', location_depth=3, class_name='myDb', exc=e, query=self.get_query(_q, _p))
 			self.reopen()
@@ -1176,9 +1207,9 @@ class Psql:
 			)
 
 		"""
-		schema, auto_connection, print_query, get_query, dt2ts, tz = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, dt2ts, tz, crt = Dict.multiselect(
 			self.handle_kwargs(kwargs),
-			['schema', 'auto_connection', 'print_query', 'get_query', 'dt2ts', 'timezone']
+			['schema', 'auto_connection', 'print_query', 'get_query', 'dt2ts', 'timezone', 'custom_read_types']
 		).values()
 		
 		if not self._check_connection(auto_connection):
@@ -1199,7 +1230,7 @@ class Psql:
 			if to_commit:
 				self.conn.commit()
 			if to_fetch:
-				result = self.read_from_cursor(dt2ts, tz)
+				result = self.read_from_cursor(dt2ts, tz, crt)
 		except Exception as e:
 			Log.log(
 				f'[{self.db_name}]',
@@ -1239,11 +1270,11 @@ class Psql:
 				returning=['uid', 'token', 'created'],
 			)
 		"""
-		schema, auto_connection, print_query, get_query, ct, returning, dt2ts, tz, ts_columns, = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, ct, returning, dt2ts, tz, ts_columns, crt = Dict.multiselect(
 			self.handle_kwargs(kwargs),
 			[
 				'schema', 'auto_connection', 'print_query', 'get_query', 'custom_types',
-				'returning', 'dt2ts', 'timezone', 'ts_columns'
+				'returning', 'dt2ts', 'timezone', 'ts_columns', 'custom_read_types'
 			]
 		).values()
 		
@@ -1299,7 +1330,7 @@ class Psql:
 			self.cur.execute(_q, _p)
 			self.conn.commit()
 			if returning:
-				res = self.read_from_cursor(dt2ts, tz)
+				res = self.read_from_cursor(dt2ts, tz, crt)
 		except Exception as e:
 			Log.log(f'[{self.db_name}]', location_depth=3, class_name='myDb', exc=e, query=self.get_query(_q, _p))
 			self.reopen()
@@ -1419,7 +1450,7 @@ class Psql:
 		if not table_id_seq:
 			table_id_seq = f'"{table}_id_seq"'
 		table = self._handle_table_name(table)
-
+		
 		_q = f"SELECT setval('{schema}.{table_id_seq}', COALESCE((SELECT MAX(id)+1 y FROM {schema}.{table}), 1), false) x"
 		_p = None
 		

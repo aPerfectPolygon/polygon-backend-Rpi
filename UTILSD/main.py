@@ -23,7 +23,7 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from UTILS import dev_utils, engines
+from UTILS import dev_utils, engines, Cache
 from UTILS.dev_utils import Log
 from UTILS.dev_utils.Database import log as db_log
 from UTILS.dev_utils.Database.Psql import Psql
@@ -31,6 +31,7 @@ from UTILS.dev_utils.Objects import String, Time, List, Json
 from UTILS.prj_utils import Defaults as prj_def
 from UTILS.prj_utils.main import Encryptions
 from UTILSD import Defaults as djn_def
+from UTILS.dev_utils.Objects.Google.reCaptcha import verify as verify_recaptcha
 
 
 class ApiInfo:
@@ -87,8 +88,7 @@ class ApiInfo:
 	response_html: bool = False
 	
 	user_fields_to_have: dict = {
-		'main': ['status'],  # SeeAlso: UTILSD.main.MainMiddleware.utils.check_active_user_if_detected
-		'info': ['lang'],
+		'main': ['status', 'lang'],  # SeeAlso: UTILSD.main.MainMiddleware.utils.check_active_user_if_detected
 	}
 	user_fields_needed: dict = {**user_fields_to_have}
 	user_must_be_active: bool = False
@@ -105,6 +105,8 @@ class ApiInfo:
 	content_types_to_accept = [*content_types_to_accept_standard]
 	
 	allow_files = False
+	
+	recaptcha_action = None
 	
 	attrs = [
 		'platform',
@@ -129,7 +131,8 @@ class ApiInfo:
 		'response_html',
 		'content_types_to_accept_standard',
 		'content_types_to_accept',
-		'allow_files'
+		'allow_files',
+		'recaptcha_action'
 	]
 	
 	def __init__(
@@ -202,13 +205,18 @@ class ApiInfo:
 class CustomUser:
 	info_fields = {
 		'main': [
+			'first_name',
+			'last_name',
 			'username',
+			'password',
+			'signed_up_with',
 			'email',
-			'status'
+			'status',
+			'auth_email',
+			'lang',
 		],
 		'info': [
-			'lang',
-			'auth_email',
+			'birth_date'
 		],
 		'notification': ['token_app', 'token_web', 'token_test'],
 		'unread_counts': ['notification'],
@@ -216,20 +224,24 @@ class CustomUser:
 	}
 	all_fields = {
 		'main': [
+			'first_name',
+			'last_name',
 			'username',
 			'password',
+			'signed_up_with',
 			'email',
 			'status',
+			'auth_email',
 			'date_joined',
 			'last_login',
 			'is_admin',
 			'is_staff',
 			'is_superuser',
 			'modified',
+			'lang',
 		],
 		'info': [
-			'lang',
-			'auth_email',
+			'birth_date',
 			'modified',
 		],
 		'notification': [
@@ -246,20 +258,24 @@ class CustomUser:
 		self.token = None
 		
 		# main
+		self.first_name = None
+		self.last_name = None
 		self.username = None
 		self.password = None
+		self.signed_up_with = None
 		self.email = None
 		self.status = None
+		self.auth_email = None
 		self.date_joined = None
 		self.last_login = None
 		self.is_admin = None
 		self.is_staff = None
 		self.is_superuser = None
 		self.m_modified = None
+		self.lang = None
 		
 		# info
-		self.lang = None
-		self.auth_email = None
+		self.birth_date = None
 		self.i_modified = None
 		
 		# notification
@@ -269,7 +285,7 @@ class CustomUser:
 		
 		# unread_counts
 		self.unread_counts_notification = None
-		
+	
 	def __repr__(self):
 		return self.data_as_dict()
 	
@@ -281,10 +297,14 @@ class CustomUser:
 		return {
 			'uid': self.uid,
 			'token': self.token,
+			'first_name': self.first_name,
+			'last_name': self.last_name,
 			'username': self.username,
 			'password': self.password,
+			'signed_up_with': self.signed_up_with,
 			'email': self.email,
 			'status': self.status,
+			'auth_email': self.auth_email,
 			'date_joined': self.date_joined,
 			'last_login': self.last_login,
 			'is_admin': self.is_admin,
@@ -292,7 +312,7 @@ class CustomUser:
 			'is_superuser': self.is_superuser,
 			'm_modified': self.m_modified,
 			'lang': self.lang,
-			'auth_email': self.auth_email,
+			'birth_date': self.birth_date,
 			'i_modified': self.i_modified,
 			'notification_token_app': self.notification_token_app,
 			'notification_token_web': self.notification_token_web,
@@ -313,29 +333,33 @@ class CustomUser:
 		-----
 		request: CustomRequest
 		fields: dict = {
-		| 	'template': 'info',  # or all
+		| 	'template': 'info',  # all
 		| 	'main': [
+		| 		'first_name',
+		| 		'last_name',
 		| 		'username',
 		| 		'password',
+		| 		'signed_up_with',
 		| 		'email',
 		| 		'status',
+		| 		'auth_email',
 		| 		'date_joined',
 		| 		'last_login',
 		| 		'is_admin',
 		| 		'is_staff',
 		| 		'is_superuser',
 		| 		'modified',
+		| 		'lang',
 		| 	],
 		| 	'info': [
-		| 		'lang',
-		| 		'auth_email',
+		| 		'birth_date',
 		| 		'modified',
 		| 	],
 		| 	'notification': [
 		| 		'token_app',
 		| 		'token_web',
 		| 		'token_test',
-		|	]
+		|	],
 		| 	'unread_counts': [
 		| 		'notification',
 		| 	]
@@ -381,7 +405,7 @@ class CustomUser:
 						fields.update({k: v})
 		
 		get_token = fields.get('get_token', False)
-		if get_token and self.token is not None:
+		if get_token and (self.token is not None or request.info.platform == djn_def.Platforms.none):
 			get_token = False
 		
 		main_fields = fields.get('main', [])
@@ -393,7 +417,7 @@ class CustomUser:
 			d_raise(
 				request,
 				djn_def.Messages.unexpected,
-				f'(not raised)  no fields specified ({request.info.name})',
+				f'no fields specified ({request.info.name})',
 				do_raise=False
 			)
 			return self
@@ -449,12 +473,12 @@ class CustomUser:
 			d_raise(
 				request,
 				djn_def.Messages.unexpected,
-				f'(not raised)  uid Not Found `{self.uid}`',
+				f'uid Not Found `{self.uid}`',
 				do_raise=False
 			)
 			return self
 		# endregion
-
+		
 		# region assigning
 		for _f in main_fields + info_fields:
 			if ' as ' in _f:
@@ -496,9 +520,14 @@ class CustomUser:
 			uid: int
 			token: str
 			status: str
-			username: str
-			email: str
 			auth_email: bool
+			first_name: str
+			last_name: str
+			username: str
+			has_password: bool
+			signed_up_with: str -> [email, google]
+			email: str
+			birth_date: int
 			lang: str
 			curr_version: int
 			force_version: int
@@ -531,9 +560,14 @@ class CustomUser:
 			'uid': self.uid,
 			'token': self.token,
 			'status': self.status,
-			'username': self.username,
-			'email': self.email,
 			'auth_email': self.auth_email,
+			'first_name': self.first_name,
+			'last_name': self.last_name,
+			'username': self.username,
+			'has_password': self.password is not None,
+			'signed_up_with': self.signed_up_with,
+			'email': self.email,
+			'birth_date': self.birth_date,
 			'lang': self.lang,
 			'unread_notification_count': self.unread_counts_notification,
 			'has_notification_token': has_notification_token,
@@ -573,7 +607,7 @@ class CustomUser:
 		unexpected:
 			| ---
 		"""
-		# self.info(request, {'main': ['status'], 'info': ['auth_email']})
+		# self.info(request, {'main': ['status', 'auth_email']})
 		
 		if self.status == djn_def.Fields.status_map['suspended']:
 			d_raise(
@@ -586,9 +620,9 @@ class CustomUser:
 		if new_status:
 			if not self.auth_email:
 				request.db.server.update(
-					'users_info',
+					'account_account',
 					pd.DataFrame(columns=['auth_email'], data=[[True]]),
-					[('uid', '=', self.uid)],
+					[('id', '=', self.uid)],
 					schema='users_data'
 				)
 				self.auth_email = True
@@ -603,9 +637,9 @@ class CustomUser:
 		else:
 			if self.auth_email:
 				request.db.server.update(
-					'users_info',
+					'account_account',
 					pd.DataFrame(columns=['auth_email'], data=[[False]]),
-					[('uid', '=', self.uid)],
+					[('id', '=', self.uid)],
 					schema='users_data'
 				)
 				self.auth_email = False
@@ -617,14 +651,211 @@ class CustomUser:
 					schema='users_data'
 				)
 				self.status = djn_def.Fields.status_map['inactive']
+		return self
 	
-	def signup(self, request, email: str, password: str, auto_login: bool = False):
+	def signup_with_google(
+			self,
+			request,
+			google_data: ty.Optional[dict],
+			auto_login: bool = False
+	):
 		"""
 		UpdatedAt: ---
 
 		About:
 		-----
 		sign user up and update `self` with new user
+
+		Parameters:
+		-----
+		request: CustomRequest
+		google_data: optional[dict]
+			* email
+			* email_verified (must be True)
+			* given_name
+			* family_name
+			* picture
+		password: str
+		auto_login: bool, default: False
+			log user in after successful signup
+
+		Response:
+		-----
+		if user exists and is inactive:
+			| status: 200
+			| comment: ---
+			| Message: UTILSD.Defaults.Messages.ok
+			| Result: UTILSD.main.CustomUser.get_user_info
+		if user exists and is active:
+			| status: 200
+			| comment: ---
+			| Message: UTILSD.Defaults.Messages.user_logged_in
+			| Result: UTILSD.main.CustomUser.get_user_info
+
+		Django Errors:
+		-----
+		main:
+			| status: 403
+			| comment: ---
+			| Message: UTILSD.Defaults.Messages.suspended_user
+			| Result: null
+			| ----------------------------------------------------
+		links:
+			| UTILSD.main.check_regex
+		possible attack:
+			| status: 400
+			| comment: google did not verify the token
+			| Message: UTILSD.Defaults.Messages.bad_input
+			| Result: ---
+			| ----------------------------------------------------
+			| status: 400
+			| comment: email is not verified
+			| Message: UTILSD.Defaults.Messages.bad_input
+			| Result: ---
+			| ----------------------------------------------------
+		unexpected:
+			| status: 400
+			| comment: bad google data
+			| Message: UTILSD.Defaults.Messages.bad_input
+			| Result: ---
+			| ----------------------------------------------------
+		"""
+		# region check google_data
+		if not google_data:
+			d_raise(
+				request,
+				djn_def.Messages.bad_input,
+				f'google not verified the token {djn_def.Messages.possible_attack}'
+			)
+		
+		try:
+			email = google_data['email']
+			email_verified = google_data['email_verified']
+			given_name = google_data['given_name']
+			family_name = google_data['family_name']
+			picture = google_data['picture']
+		except:
+			d_raise(
+				request,
+				djn_def.Messages.bad_input,
+				f'bad google_data {djn_def.Messages.unexpected}'
+			)
+			return  # just for ide warnings
+		
+		if not email_verified:
+			d_raise(
+				request,
+				djn_def.Messages.bad_input,
+				f'email is not verified {djn_def.Messages.possible_attack}'
+			)
+		
+		# endregion
+		
+		request.db.server.schema = 'users_data'
+		
+		# region check if user exists
+		user = request.db.server.read(
+			'account_account', ['id', 'status'], [("replace(email, '.', '')", '=', email.replace('.', ''))]
+		).to_dict('records')
+		if user:
+			user = user[0]
+			self.uid = user['id']
+			self.status = user['status']
+			if self.status == djn_def.Fields.status_map['active']:
+				if auto_login:
+					Token(request).regenerate()
+				
+				self.info(request, {'template': 'info', 'main': ['date_joined']})
+				d_raise(
+					request,
+					djn_def.Messages.user_logged_in,
+					result=self.get_user_info(request),
+					code=200
+				)
+			elif self.status == djn_def.Fields.status_map['inactive']:
+				if auto_login:
+					Token(request).regenerate()
+				
+				# update user with new data
+				request.db.server.update(
+					'account_account',
+					pd.DataFrame(
+						[[
+							given_name, family_name, email, None, 'google',
+							True, djn_def.Fields.status_map['active']
+						]],
+						columns=[
+							'first_name', 'last_name', 'email', 'password',
+							'signed_up_with', 'auth_email', 'status'
+						]
+					),
+					[('id', '=', self.uid)],
+					schema='users_data'
+				)
+				
+				self.info(request, {'template': 'info', 'main': ['date_joined']})
+				d_raise(
+					request,
+					djn_def.Messages.user_logged_in,
+					result=self.get_user_info(request),
+					code=200
+				)
+			elif self.status == djn_def.Fields.status_map['suspended']:
+				d_raise(
+					request,
+					djn_def.Messages.suspended_user,
+					code=403
+				)
+			d_raise(
+				request,
+				djn_def.Messages.bad_input,
+				f'{djn_def.Messages.possible_attack} {djn_def.Messages.must_not_happen}'
+			)
+		# endregion
+		
+		# create user
+		try:
+			acc = get_user_model()(
+				first_name=given_name,
+				last_name=family_name,
+				email=email,
+				username=gen_random_username(request.db.server),
+				signed_up_with='google',
+				lang=request.lang,
+				auth_email=True,
+				status=djn_def.Fields.status_map['active']
+			)
+			acc.save()
+			self.uid = acc.id
+		except Exception as e:
+			d_raise(
+				request,
+				djn_def.Messages.already_exists,
+				e,
+				exc_comment=djn_def.Messages.must_not_happen,
+				code=409
+			)
+			return  # just for ide warnings
+		
+		# create user`s related records across other tables
+		request.db.server.insert('users_info', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
+		request.db.server.insert('users_notification_settings', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
+		request.db.server.insert('users_unread_counts', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
+		
+		if auto_login:
+			Token(request).create()
+		self.info(request, {'template': 'info', 'main': ['date_joined']})
+	
+	def signup_with_email(self, request, email: str, password: str, auto_login: bool = False) -> int:
+		"""
+		UpdatedAt: ---
+
+		About:
+		-----
+		sign user up and update `self` with new user and return response code
+		* return value is only 200 or 201
+			* 200: not new user
+			* 201: new user
 
 		Parameters:
 		-----
@@ -650,6 +881,11 @@ class CustomUser:
 			| Message: UTILSD.Defaults.Messages.already_exists
 			| Result: null
 			| ----------------------------------------------------
+			| status: 403
+			| comment: ---
+			| Message: UTILSD.Defaults.Messages.suspended_user
+			| Result: null
+			| ----------------------------------------------------
 		links:
 			| UTILSD.main.check_regex
 		possible attack:
@@ -662,46 +898,59 @@ class CustomUser:
 		
 		request.db.server.schema = 'users_data'
 		
-		# existing_user checks
-		try:
-			existing_user = request.db.server.read(
-				'account_account',
-				['id', 'status'],
-				[('email', '=', email)]
-			).to_dict('records')[0]
-			self.uid = existing_user['id']
-			if existing_user['status'] == djn_def.Fields.status_map['inactive']:
+		# region check if user exists
+		user = request.db.server.read(
+			'account_account', ['id', 'status'], [("replace(email, '.', '')", '=', email.replace('.', ''))]
+		).to_dict('records')
+		if user:
+			user = user[0]
+			self.uid = user['id']
+			self.status = user['status']
+			
+			if self.status == djn_def.Fields.status_map['active']:
+				d_raise(
+					request,
+					djn_def.Messages.already_exists,
+					code=409
+				)
+			elif self.status == djn_def.Fields.status_map['inactive']:
 				if auto_login:
 					Token(request).regenerate()
 				
 				# update user with new data
 				request.db.server.update(
 					'account_account',
-					pd.DataFrame([[make_password(password)]], columns=['password']),
+					pd.DataFrame(
+						[['', '', make_password(password)]],
+						columns=['first_name', 'last_name', 'password']
+					),
 					[('id', '=', self.uid)],
 					schema='users_data'
 				)
 				
-				self.info(request, {'template': 'info'})
-				return d_response(
+				self.info(request, {'template': 'info', 'main': ['date_joined']})
+				return 200
+			elif self.status == djn_def.Fields.status_map['suspended']:
+				d_raise(
 					request,
-					djn_def.Messages.ok,
-					result=self.get_user_info(request),
-					code=200
+					djn_def.Messages.suspended_user,
+					code=403,
 				)
 			d_raise(
 				request,
-				djn_def.Messages.already_exists,
-				f'{email} uid -> {self.uid}',
-				code=409
+				djn_def.Messages.bad_input,
+				f'{djn_def.Messages.possible_attack} {djn_def.Messages.must_not_happen}'
 			)
-		except IndexError:
-			# user does not exist and we are good to go
-			pass
+		# endregion
 		
 		# create user
 		try:
-			acc = get_user_model()(email=email, username=gen_random_username(request.db.server))
+			acc = get_user_model()(
+				email=email,
+				username=gen_random_username(request.db.server),
+				signed_up_with='email',
+				lang=request.lang
+			)
 			acc.set_password(password)
 			acc.save()
 			self.uid = acc.id
@@ -710,19 +959,21 @@ class CustomUser:
 				request,
 				djn_def.Messages.already_exists,
 				e,
-				exc_comment=f'{email} uid -> {self.uid} {djn_def.Messages.must_not_happen}',
+				exc_comment=djn_def.Messages.must_not_happen,
 				code=409
 			)
 			return  # just for ide warnings
 		
 		# create user`s related records across other tables
-		request.db.server.insert('users_info', pd.DataFrame(columns=['uid', 'lang'], data=[[acc.id, request.lang]]))
+		request.db.server.insert('users_info', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
 		request.db.server.insert('users_notification_settings', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
 		request.db.server.insert('users_unread_counts', pd.DataFrame(columns=['uid'], data=[[acc.id]]))
 		
 		if auto_login:
 			Token(request).create()
-		self.info(request, {'template': 'info'})
+		self.info(request, {'template': 'info', 'main': ['date_joined']})
+		
+		return 201
 	
 	def login(self, request, username: str, password: str, treat_as: str = None):
 		"""
@@ -790,7 +1041,7 @@ class CustomUser:
 			user = request.db.server.read(
 				'account_account',
 				['id', 'password', 'status'],
-				[('email', '=', username)]
+				[("replace(email, '.', '')", '=', username.replace('.', ''))]
 			).to_dict('records')
 		
 		if not user:
@@ -836,15 +1087,10 @@ class CustomUser:
 		Token(request).regenerate()
 		request.db.server.update(
 			'account_account',
-			pd.DataFrame(columns=['last_login'], data=[["timezone('utc', now())"]]),
+			pd.DataFrame([["timezone('utc', now())", request.lang]], columns=['last_login', 'lang']),
 			[('id', '=', self.uid)]
 		)
-		request.db.server.update(
-			'users_info',
-			pd.DataFrame(columns=['lang'], data=[[request.lang]]),
-			[('uid', '=', self.uid)]
-		)
-		self.info(request, {'template': 'info'})
+		self.info(request, {'template': 'info', 'main': ['date_joined']})
 	
 	def upgrade(self, request):
 		pass
@@ -855,22 +1101,43 @@ class CustomUser:
 	def update_notification_unread_count(self, request, force=False):
 		if self.unread_counts_notification is not None and (self.unread_counts_notification < 100 or force):
 			self.unread_counts_notification = request.db.server.custom(
-				f"update users_data.users_unread_counts set notification = (select count('id') from (select 'id' from users_data.users_notification_inventory where ({self.uid} = any(uids) or uids is NULL) and not {self.uid} = any(users_seen) limit 100) x) where uid = {self.uid} returning notification",
+				f"""update users_data.users_unread_counts set notification = (
+						select count('id') from (
+							select 'id' from users_data.users_notification_inventory
+							where
+								created >= '{self.date_joined}'
+								and ({self.uid} = any(uids) or uids is NULL)
+								and not {self.uid} = any(users_seen)
+							limit 100
+						) x
+					) where uid = {self.uid} returning notification""",
 				None,
 				to_commit=True,
 				to_fetch=True
 			).values.tolist()[0][0]
-
-	def topic_assign(self, topic):
-		for item in [self.notification_token_web]:
-			if item:
-				engines.Notification.Topic.assign(topic, item)
-
-	def topic_unassign(self, topic):
-		for item in [self.notification_token_web]:
-			if item:
-				engines.Notification.Topic.unassign(topic, item)
-
+	
+	def topic_assign(self, topic: str):
+		_tokens = pd.Series([
+			self.notification_token_app,
+			self.notification_token_web,
+			self.notification_token_test,
+		]).dropna().tolist()
+		if not _tokens:
+			return
+		
+		engines.Notification.Topic.assign(topic, _tokens)
+	
+	def topic_unassign(self, topic: str):
+		_tokens = pd.Series([
+			self.notification_token_app,
+			self.notification_token_web,
+			self.notification_token_test,
+		]).dropna().tolist()
+		if not _tokens:
+			return
+		
+		engines.Notification.Topic.unassign(topic, _tokens)
+	
 	def send_notification(
 			self,
 			title: str,
@@ -895,6 +1162,70 @@ class CustomUser:
 			choices,
 			**kwargs
 		)
+	
+	def set_notification_token(self, request, token: str, _do_raise=True):
+		"""
+		UpdatedAt: ---
+
+		About:
+		-----
+		set user's notification token
+
+		Parameters:
+		-----
+		request: CustomRequest
+		token: str
+
+		Django Errors:
+		-----
+		main:
+			| ---
+		links:
+			| ---
+		possible attack:
+			| status: 400
+			| comment: firebase did not validate token
+			| Message: UTILSD.Defaults.Messages.bad_input
+			| Result: null
+			| ----------------------------------------------------
+		unexpected:
+			| ---
+		"""
+		if not engines.Notification.validate(token):
+			d_raise(
+				request,
+				djn_def.Messages.bad_input,
+				f'firebase did not validate token {djn_def.Messages.possible_attack}',
+				do_raise=_do_raise,
+				code=410
+			)
+			return
+		
+		if request.info.platform == djn_def.Platforms.app:
+			col = 'token_app'
+		elif request.info.platform == djn_def.Platforms.web:
+			col = 'token_web'
+		elif request.info.platform == djn_def.Platforms.test:
+			col = 'token_test'
+		else:
+			return
+		self.update_notification_unread_count(request)
+		
+		if getattr(self, f'notification_{col}') == token:
+			return
+		
+		request.db.server.schema = 'users_data'
+		request.db.server.update(
+			'users_notification_settings',
+			pd.DataFrame([[None]], columns=[col]),
+			[(col, '=', token)],
+		)
+		request.db.server.update(
+			'users_notification_settings',
+			pd.DataFrame([[token]], columns=[col]),
+			[('uid', '=', self.uid)],
+		)
+		setattr(self, f'notification_{col}', token)
 
 
 class CustomDb:
@@ -973,38 +1304,49 @@ class Token:
 			raise RuntimeError('No User Specified')
 		return uid
 	
-	def regenerate(self) -> str:
+	def regenerate(self, platform: str = None, token: str = None) -> str:
 		"""(insert or update) and read token"""
 		uid = self._check_user()
+		if platform is None:
+			platform = self.request.info.platform
+		if token is None:
+			token = self._generate()
+		
 		if self._is_admin(uid):
-			return self.get_or_create()['token']
+			return self.get_or_create(platform)['token']
 		
 		return self.request.db.server.upsert(
-			f'users_token_{self.request.info.platform}',
+			f'users_token_{platform}',
 			pd.DataFrame(
 				columns=['uid', 'token'],
-				data=[[uid, self._generate()]]
+				data=[[uid, token]]
 			).set_index('uid'),
 			ts_columns='created',
 			returning=['token'],
 			schema='users_data'
 		).token.values[0]
 	
-	def delete(self):
+	def delete(self, platform=None):
 		uid = self._check_user()
 		if self._is_admin(uid):
-			return self.get_or_create()
+			return self.get_or_create(platform)
+		
+		if platform is None:
+			platform = self.request.info.platform
 		
 		self.request.db.server.delete(
-			f'users_token_{self.request.info.platform}',
+			f'users_token_{platform}',
 			[('uid', '=', uid)],
 			schema='users_data'
 		)
 	
-	def is_expired(self) -> bool:
+	def is_expired(self, platform=None) -> bool:
 		uid = self._check_user()
+		if platform is None:
+			platform = self.request.info.platform
+		
 		return self.request.db.server.exists(
-			f'users_token_{self.request.info.platform}',
+			f'users_token_{platform}',
 			[
 				('uid', '=', uid),
 				(
@@ -1015,17 +1357,20 @@ class Token:
 			schema='users_data'
 		)
 	
-	def get_or_create(self) -> dict:
+	def get_or_create(self, platform=None) -> dict:
 		""" insert, read """
 		uid = self._check_user()
+		
+		if platform is None:
+			platform = self.request.info.platform
 		
 		_q = f"""
 		with sel as (
 			select token, created, uid
-			from users_data."users_token_{self.request.info.platform}"
+			from users_data."users_token_{platform}"
 			where uid = {uid}
 		), ins as (
-			insert into users_data."users_token_{self.request.info.platform}" (token, created, uid)
+			insert into users_data."users_token_{platform}" (token, created, uid)
 			select '{self._generate()}' token, '{self.request.start}' created, {uid} uid
 				where not exists (select 1 x from sel)
 				returning token, created, uid
@@ -1037,10 +1382,13 @@ class Token:
 		res = dict(zip(['token', 'created', 'uid'], res))
 		return res
 	
-	def get(self, **kwargs) -> dict:
+	def get(self, platform=None, **kwargs) -> dict:
 		try:
+			if platform is None:
+				platform = self.request.info.platform
+			
 			return self.request.db.server.read(
-				f'users_token_{self.request.info.platform}',
+				f'users_token_{platform}',
 				['token', 'created', 'uid'],
 				[(k, '=', v) for k, v in kwargs.items()],
 				schema='users_data'
@@ -1048,13 +1396,11 @@ class Token:
 		except:
 			raise self.DoesNotExist
 	
-	def create(self) -> dict:
-		return self.get_or_create()
+	def create(self, platform=None) -> dict:
+		return self.get_or_create(platform)
 
 
 class MainMiddleware:
-	# todo handle Broken Pipe
-	
 	class utils:
 		@staticmethod
 		def get_request_headers(request: WSGIRequest) -> dict:
@@ -1084,11 +1430,11 @@ class MainMiddleware:
 		@staticmethod
 		def get_request_client_ip(request: WSGIRequest) -> str:
 			""" get client ip from request """
-			ip = request.META.get('HTTP_X_FORWARDED_FOR', None)
+			ip = request.META.get('HTTP_X_FORWARDED_FOR')
 			if not ip:
-				ip = request.META.get('HTTP_X_REAL_IP', None)
+				ip = request.META.get('HTTP_X_REAL_IP')
 				if not ip:
-					ip = request.META.get('REMOTE_ADDR', None)
+					ip = request.META.get('REMOTE_ADDR')
 			return ip
 		
 		@staticmethod
@@ -1150,9 +1496,13 @@ class MainMiddleware:
 			"""
 			try:
 				if request.method in all_methods:
-					res = wsgi_convertor(request).data['request']
+					res = wsgi_convertor(request).data
 				else:
-					res = api_view([request.method])(lambda x: Response({'request': x}))(request).data['request']
+					res = api_view([request.method])(lambda x: Response({'request': x}))(request).data
+				
+				if 'detail' in res:
+					raise Exception(res['detail'])
+				res = res['request']
 				
 				# add request attrs to res
 				res.resolver_match = request.resolver_match
@@ -1170,12 +1520,16 @@ class MainMiddleware:
 				else:
 					request.input_body = {}
 				
+				if getattr(e, 'default_code') == 'not_acceptable':
+					comment = 'WSGI -> DRF'
+				else:
+					comment = f'WSGI -> DRF {djn_def.Messages.unexpected}'
+				
 				res = m_raise(
 					request,
-					djn_def.Messages.method_not_allowed,
+					djn_def.Messages.bad_input,
 					e,
-					exc_comment=f'unexpected error while converting WSGI to DRF {djn_def.Messages.possible_attack}',
-					code=405
+					exc_comment=comment,
 				)
 			return res
 		
@@ -1243,7 +1597,7 @@ class MainMiddleware:
 				| ---
 			"""
 			
-			if request.method not in request.info.methods:
+			if request.info.methods and request.method not in request.info.methods:
 				return m_raise(
 					request,
 					djn_def.Messages.method_not_allowed,
@@ -1315,7 +1669,7 @@ class MainMiddleware:
 				| status: 400
 				| comment: bad request agent
 				| Message: UTILSD.Defaults.Messages.bad_input
-				| Result: null ** just_message **
+				| Result: ** just_message **
 				| ---------------------------------------------------------------
 				| status: 400
 				| comment: bad content type
@@ -1326,6 +1680,11 @@ class MainMiddleware:
 				| comment: bad host
 				| Message: UTILSD.Defaults.Messages.bad_input
 				| Result: ** just_message **
+				| ---------------------------------------------------------------
+				| status: 400
+				| comment: ip blocked
+				| Message: UTILSD.Defaults.Messages.ip_blocked
+				| Result: ---
 				| ---------------------------------------------------------------
 			unexpected:
 				| ---
@@ -1357,7 +1716,7 @@ class MainMiddleware:
 					f'request from banned user agent `{ua}` {djn_def.Messages.possible_attack}',
 					response_just_message=True
 				)
-
+			
 			if 'HTTP_POSTMAN_TOKEN' in request.headers:
 				return m_raise(
 					request,
@@ -1365,15 +1724,26 @@ class MainMiddleware:
 					f'request from postman {djn_def.Messages.possible_attack}',
 					response_just_message=True
 				)
-
+			
 			# ban bad host
-			host = request.headers.get('HTTP_HOST', None)
+			host = request.headers.get('HTTP_HOST')
 			if host is None or host.split(':')[0] not in djn_def.allowed_hosts:
 				return m_raise(
 					request,
 					djn_def.Messages.bad_input,
 					f'bad host `{host}` {djn_def.Messages.possible_attack}',
 					response_just_message=True
+				)
+			
+			if request.db.server.exists(
+					'ip_blocked',
+					[('ip', '=', request.client_ip), ('block_until', '>=', request.start)],
+					schema='users_data'
+			):
+				return m_raise(
+					request,
+					djn_def.Messages.ip_blocked,
+					f'ip blocked {djn_def.Messages.possible_attack}',
 				)
 			
 			return request
@@ -1431,7 +1801,7 @@ class MainMiddleware:
 					| ---
 				"""
 				
-				__input = request.input_body.get('input', None)
+				__input = request.input_body.get('input')
 				if not __input:
 					return m_raise(
 						request,
@@ -1459,8 +1829,8 @@ class MainMiddleware:
 						exc_comment=f'not json serializable {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
 					)
 				
-				headers = input_data.get('HEADERS', None)
-				contents = input_data.get('CONTENTS', None)
+				headers = input_data.get('HEADERS')
+				contents = input_data.get('CONTENTS')
 				
 				if headers is None:
 					return m_raise(
@@ -1479,14 +1849,21 @@ class MainMiddleware:
 				request.headers.update(headers)
 				request.input_body = contents
 				
-				timestamp = request.headers.get('HTTP_TIMESTAMP', None)
+				timestamp = request.headers.get('HTTP_TIMESTAMP')
 				if timestamp is None:
 					return m_raise(
 						request,
 						djn_def.Messages.bad_input,
 						comment=f'`TIMESTAMP` header not provided {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
 					)
-				timestamp = Time.ts2dt(timestamp, 'gmt', remove_tz=True)
+				try:
+					timestamp = Time.ts2dt(timestamp, 'gmt', remove_tz=True)
+				except:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						comment=f'bad `TIMESTAMP` header {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
+					)
 				if abs(Time.ParseTimeDelta(request.start - timestamp).hours) >= 48:
 					return m_raise(
 						request,
@@ -1544,7 +1921,7 @@ class MainMiddleware:
 					| ---
 				"""
 				
-				__input = request.input_body.get('input', None)
+				__input = request.input_body.get('input')
 				if not __input:
 					return m_raise(
 						request,
@@ -1572,8 +1949,8 @@ class MainMiddleware:
 						exc_comment=f'not json serializable {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
 					)
 				
-				headers = input_data.get('HEADERS', None)
-				contents = input_data.get('CONTENTS', None)
+				headers = input_data.get('HEADERS')
+				contents = input_data.get('CONTENTS')
 				
 				if headers is None:
 					return m_raise(
@@ -1592,14 +1969,21 @@ class MainMiddleware:
 				request.headers.update(headers)
 				request.input_body = contents
 				
-				timestamp = request.headers.get('HTTP_TIMESTAMP', None)
+				timestamp = request.headers.get('HTTP_TIMESTAMP')
 				if timestamp is None:
 					return m_raise(
 						request,
 						djn_def.Messages.bad_input,
 						comment=f'`TIMESTAMP` header not provided {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
 					)
-				timestamp = Time.ts2dt(timestamp, 'gmt', remove_tz=True)
+				try:
+					timestamp = Time.ts2dt(timestamp, 'gmt', remove_tz=True)
+				except:
+					return m_raise(
+						request,
+						djn_def.Messages.bad_input,
+						comment=f'bad `TIMESTAMP` header {djn_def.Messages.possible_attack} %100 {djn_def.Messages.encryption_at_risk}'
+					)
 				if abs(Time.ParseTimeDelta(request.start - timestamp).hours) >= 48:
 					return m_raise(
 						request,
@@ -1639,7 +2023,7 @@ class MainMiddleware:
 				unexpected:
 					| ---
 				"""
-				app_version = request.headers.get('HTTP_APP_VERSION', None)
+				app_version = request.headers.get('HTTP_APP_VERSION')
 				if not app_version:
 					return m_raise(
 						request,
@@ -1660,20 +2044,60 @@ class MainMiddleware:
 						request,
 						djn_def.Messages.out_of_date,
 						f'{app_version}<{djn_def.app_force_version}',
-						result={'link': 'UPDATE_LINK'},
+						result={'link': 'UPDATE_LINK'},  # fillme
 						code=426
 					)
 				
 				to_update = {
-					'token': request.headers.get('HTTP_AUTHENTICATION', None),
+					'token': request.headers.get('HTTP_AUTHENTICATION'),
 					'HTTP_APP_VERSION': app_version
 				}
 				request.headers.update(to_update)
 				request.META.update(to_update)
 			elif request.info.platform == djn_def.Platforms.web:
-				request.headers.update({'token': request.headers.get('HTTP_AUTHENTICATION', None)})
+				request.headers.update({'token': request.headers.get('HTTP_AUTHENTICATION')})
 			elif request.info.platform == djn_def.Platforms.test:
-				request.headers.update({'token': request.headers.get('HTTP_AUTHENTICATION', None)})
+				request.headers.update({
+					'token': request.headers.get('HTTP_AUTHENTICATION'),
+					'testnet_user': request.headers.get('HTTP_TESTNET_AUTHENTICATION'),
+				})
+				if not request.headers['testnet_user']:
+					d_raise(
+						request,
+						djn_def.Messages.possible_attack,
+						f'no testnet_user {djn_def.Messages.possible_attack}',
+						do_raise=False
+					)
+					return m_raise(
+						request,
+						djn_def.Messages.not_found_404,
+						code=404,
+						response_just_message=True,
+						response_additional_headers={'Content-Type': 'text/plain'}
+					)
+				
+				uid = request.db.server.read(
+					'users_token_testnet',
+					['uid'],
+					[('token', '=', request.headers['testnet_user'])],
+					schema='users_data'
+				).uid.tolist()
+				if not uid and not (
+						re.match('^\/v1\/Test\/User\/SignupSeries\/(signup|re_send|verify)$', request.path)
+						and request.db.server.count(
+					'account_account', 'id', [('status', '=', 'ACTIVE')], schema='users_data') == 0
+				):
+					return m_raise(
+						request,
+						djn_def.Messages.not_found_404,
+						f'testnet_user not found {djn_def.Messages.possible_attack}',
+						code=404,
+						response_just_message=True,
+						response_additional_headers={'Content-Type': 'text/plain'}
+					)
+				
+				if uid:
+					request.headers['testnet_user'] = uid[0]
 			
 			return request
 		
@@ -1708,7 +2132,7 @@ class MainMiddleware:
 				| ---
 			"""
 			if request.info.token_required:
-				token = request.headers.get('token', None)
+				token = request.headers.get('token')
 				
 				if token is None:
 					return m_raise(
@@ -1738,6 +2162,7 @@ class MainMiddleware:
 				
 				request.User.token = token
 				request.User.info(request, request.info.user_fields_needed)
+				request.lang = request.User.lang
 			
 			return request
 		
@@ -1817,6 +2242,9 @@ class MainMiddleware:
 			)
 			
 			# body
+			if request.info.recaptcha_action:
+				request.info.input_body_optional.update({'recaptcha_token': [str]})
+			
 			_all = {
 				**request.info.input_body_required,
 				**request.info.input_body_optional,
@@ -1857,11 +2285,90 @@ class MainMiddleware:
 			return request
 		
 		@staticmethod
+		def check_recaptcha(request: CustomRequest) -> ty.Union[CustomRequest, HttpResponse]:
+			"""
+			UpdatedAt: ---
+
+			About:
+			-----
+			check and raise error if captcha token is not sent or valid
+			** token must be sent in `recaptcha_token` key **
+			** this check will be enabled if `recaptcha_action` is set in request.info **
+			** `recaptcha_action` == 'all' -> do not check action and accept them all **
+
+			Django Errors:
+			-----
+			main:
+				| ---
+			links:
+				| ---
+			possible attack:
+				| status: 400
+				| comment: token not sent
+				| Message: UTILSD.Defaults.Messages.bad_input
+				| Result: null
+				| ----------------------------------------------------
+				| status: 412
+				| comment: token can not be verified
+				| Message: UTILSD.Defaults.Messages.bad_recaptcha
+				| Result: null
+				| ----------------------------------------------------
+			unexpected:
+				| status: 400
+				| comment: bad platform
+				| Message: UTILSD.Defaults.Messages.bad_input
+				| Result: null
+				| ----------------------------------------------------
+			"""
+			if request.info.recaptcha_action is None:
+				return request
+			
+			token = request.input_body.get('recaptcha_token')
+			if not token:
+				if request.info.platform == djn_def.Platforms.test:
+					return request
+				return m_raise(
+					request,
+					djn_def.Messages.bad_input,
+					f'recaptcha not sent {djn_def.Messages.possible_attack}'
+				)
+			
+			if request.info.platform == djn_def.Platforms.app:
+				secret = prj_def.recaptcha_secret_app
+			elif request.info.platform == djn_def.Platforms.web:
+				secret = prj_def.recaptcha_secret_web
+			elif request.info.platform == djn_def.Platforms.test:
+				secret = prj_def.recaptcha_secret_web
+			else:
+				return m_raise(
+					request,
+					djn_def.Messages.bad_input,
+					f'bad platform {request.info.platform} {djn_def.Messages.unexpected}'
+				)
+			
+			verify_result = verify_recaptcha(
+				secret,
+				token,
+				djn_def.recaptcha_hosts,
+				djn_def.recaptcha_package_names,
+				None if request.info.recaptcha_action == 'all' else [request.info.recaptcha_action]
+			)
+			if not verify_result['success']:
+				return m_raise(
+					request,
+					djn_def.Messages.bad_recaptcha,
+					f'{Json.encode(verify_result["obj"])} {djn_def.Messages.possible_attack}',
+					code=412
+				)
+			return request
+		
+		@staticmethod
 		def apply_output_model(request: ty.Union[CustomRequest, WSGIRequest], result: HttpResponse) -> HttpResponse:
 			""" get output data ready for client """
 			if hasattr(request.User, 'to_downgrade'):
 				request.User.downgrade(request)
 			
+			request.db.close()
 			if request.info.response_html:
 				return result
 			
@@ -1878,6 +2385,37 @@ class MainMiddleware:
 					result.content = Json.encode(data)
 				del result.data
 			
+			return result
+		
+		@staticmethod
+		def handle_popup(
+				request: ty.Union[CustomRequest, WSGIRequest],
+				result: ty.Union[HttpResponse, SimpleTemplateResponse]
+		) -> HttpResponse:
+			""" add `Popup` key to result """
+			if not hasattr(result, 'data'):
+				return result
+			
+			result.data.update({'Popup': None})
+			
+			if 200 <= result.status_code < 400:
+				request_popups = Cache.api_popups.loc[Cache.api_popups.api == request.path]
+				if request_popups.empty:
+					return result
+				request_popups = request_popups.loc[
+					(request_popups.uids == '||')
+					| (request_popups.uids.str.contains(f'|{request.User.uid}|'))
+					]
+				if request_popups.empty:
+					return result
+				
+				popup_ids = request.db.server.custom(
+					f"select id from users_data.popup where id in %s and not({request.User.uid} = any(users_seen)) order by id",
+					[tuple(request_popups.id.tolist())], to_commit=False, to_fetch=True
+				).id.tolist()
+				if not popup_ids:
+					return result
+				result.data.update({'Popup': popup_ids[0]})
 			return result
 	
 	def __init__(self, get_response):
@@ -1908,8 +2446,10 @@ class MainMiddleware:
 			| check user if required
 			| check active user if detected
 			| check api input data
+			| check reCaptcha
 			| RUN API VIEW
 			| apply output model
+			| handle popup
 			| close database connection
 
 		Django Errors:
@@ -1936,6 +2476,19 @@ class MainMiddleware:
 		# get client ip from request.META
 		setattr(request, 'client_ip', self.utils.get_request_client_ip(request))
 		
+		# assign empty token to request headers
+		request.headers.update({'token': None})
+		
+		# open a database connection for request
+		request.db = CustomDb()
+		request.db.server.open()
+		
+		# assign empty user to request
+		request.User = CustomUser()
+		
+		# assign default language
+		request.lang = prj_def.Languages.en
+		
 		# handle resolvers
 		request = self.utils.handle_resolver_match(request)
 		
@@ -1945,79 +2498,66 @@ class MainMiddleware:
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
-		# assign empty token to request headers
-		request.headers.update({'token': None})
-		
-		# open a database connection for request
-		request.db = CustomDb()
-		request.db.open()
-		
-		# assign empty user to request
-		request.User = CustomUser()
-		
 		# fill request input body and params
 		request = self.utils.fill_request_params(request)
 		
 		# ban bad requests
 		res = self.utils.ban_bad_requests(request)
 		if isinstance(res, HttpResponse):
-			request.db.close()
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
 		# handle CORS
 		res = self.utils.handle_cors(request)
 		if isinstance(res, HttpResponse):
-			request.db.close()
-			return self.utils.apply_output_model(request, res)
-		request = res
-		
-		# check input model
-		res = self.utils.check_input_model(request)
-		if isinstance(res, HttpResponse):
-			request.db.close()
-			return self.utils.apply_output_model(request, res)
-		request = res
-		
-		# handle 404
-		res = handler404(request, from_middleware=True)
-		if isinstance(res, HttpResponse):
-			request.db.close()
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
 		# check request method
 		res = self.utils.check_request_method(request)
 		if isinstance(res, HttpResponse):
-			request.db.close()
+			return self.utils.apply_output_model(request, res)
+		request = res
+		
+		# check input model
+		res = self.utils.check_input_model(request)
+		if isinstance(res, HttpResponse):
+			return self.utils.apply_output_model(request, res)
+		request = res
+		
+		# handle 404
+		res = handler404(request, from_middleware=True)
+		if isinstance(res, HttpResponse):
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
 		# check platform required data
 		res = self.utils.check_platform_required_data(request)
 		if isinstance(res, HttpResponse):
-			request.db.close()
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
 		# check user if required
 		res = self.utils.check_user_if_required(request)
 		if isinstance(res, HttpResponse):
-			request.db.close()
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
 		# check active user if detected
 		res = self.utils.check_active_user_if_detected(request)
 		if isinstance(res, HttpResponse):
-			request.db.close()
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
 		# check api input data
 		res = self.utils.check_api_input_data(request)
 		if isinstance(res, HttpResponse):
-			request.db.close()
+			return self.utils.apply_output_model(request, res)
+		request = res
+		
+		# check reCaptcha
+		res = self.utils.check_recaptcha(request)
+		if isinstance(res, HttpResponse):
 			return self.utils.apply_output_model(request, res)
 		request = res
 		
@@ -2026,12 +2566,11 @@ class MainMiddleware:
 		
 		# response will reach this code no matter what (even if error occurs) [except for middleware errors]
 		
-		# apply output mode
-		res = self.utils.apply_output_model(request, res)
+		# if this api has popup return it
+		res = self.utils.handle_popup(request, res)
 		
-		# close request database connection
-		request.db.close()
-		return res
+		# apply output model
+		return self.utils.apply_output_model(request, res)
 	
 	@staticmethod
 	def process_exception(request, exc):
@@ -2042,9 +2581,10 @@ class MainMiddleware:
 				exc,
 				exc_comment='[UNHANDLED]',
 				do_raise=False,
+				print_not_raised=False,
 			)
 		
-		if exc.template:
+		if exc.template and request.info.response_html:
 			return _make_html_response_ready(
 				request,
 				exc.template,
@@ -2074,17 +2614,30 @@ class FakeHeadersMiddleware:
 		res.headers = dict(res.headers)
 		
 		res.headers.update({
-			'Server': 'Apache/2.4.1 (Unix)',
+			# 'Server': 'Apache/2.4.1 (Unix)',
+			# 'Via': 'James',
 			'X-Frame-Options': 'SAMEORIGIN',
-			'Referrer-Policy': 'strict-origin-when-cross-origin',
-			'Vary': 'Origin',
-			'Via': 'James',
+			'X-XSS-Protection': '1; mode=block',
+			'X-Content-Type-Options': 'nosniff',
+			# 'Referrer-Policy': 'strict-origin-when-cross-origin',
+			'Referrer-Policy': 'no-referrer-when-downgrade',
+			'Content-Security-Policy': "default-src * data: 'unsafe-eval' 'unsafe-inline'",
+			'Strict-Transport-Security': "max-age=31536000; includeSubDomains; preload",
 		})
 		if not hasattr(res, 'template_name') and not res.headers['Content-Type'].startswith('image'):
 			res.headers['Content-Type'] = 'application/json'
 		if hasattr(res, 'response_additional_headers'):
 			res.headers.update(res.response_additional_headers)
 		
+		res.headers.update({
+			'Access-Control-Allow-Origin': request.headers['HTTP_ORIGIN'] if bool(
+				re.match(
+					'^https://(?:.+\.)?polygon\.com$',
+					request.headers.get('HTTP_ORIGIN', ''))
+			) else '',
+			'Access-Control-Allow-Credentials': 'true',
+		})
+		# res.headers.update({'Access-Control-Allow-Origin': '*'})
 		return res
 
 
@@ -2114,6 +2667,7 @@ class Validation:
 			message: str,
 			comment: str,
 			code=400,
+			**kwargs
 	) -> ty.Union[HttpResponse, CustomException]:
 		""" raise error based on `from_middleware` or not """
 		func = m_raise if self.from_middleware else d_raise
@@ -2158,6 +2712,7 @@ class Validation:
 				djn_def.Messages.bad_input,
 				f'`{tag}` `{type(data)}` must be `{type_to_be}`'
 				f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+				**kwargs
 			)
 	
 	def check_standard(
@@ -2197,6 +2752,7 @@ class Validation:
 				djn_def.Messages.bad_input,
 				f'`{tag}` `{type(data)}` must be list to check standard '
 				f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+				**kwargs
 			)
 		if isinstance(data, dict):
 			data = list(data.keys())
@@ -2210,6 +2766,7 @@ class Validation:
 				djn_def.Messages.bad_input,
 				f'`{tag}` not in standard ones '
 				f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+				**kwargs
 			)
 	
 	def check_duplicates(
@@ -2248,6 +2805,7 @@ class Validation:
 				djn_def.Messages.bad_input,
 				f'`{tag}` `{type(data)}` must be list to check duplicates '
 				f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+				**kwargs
 			)
 		
 		if List.has_duplicates(data):
@@ -2255,6 +2813,7 @@ class Validation:
 				djn_def.Messages.bad_input,
 				f'`{tag}` contains duplicate values '
 				f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+				**kwargs
 			)
 	
 	def check_keys(
@@ -2301,6 +2860,7 @@ class Validation:
 				djn_def.Messages.bad_input,
 				f'`{tag}` `{type(data)}` must be dict to check keys '
 				f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+				**kwargs
 			)
 		for item in required_keys:
 			if item not in data:
@@ -2308,6 +2868,7 @@ class Validation:
 					djn_def.Messages.bad_input,
 					f'`{tag}` `{item}` which is required is not present in input '
 					f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+					**kwargs
 				)
 		if block_additional_keys:
 			additional_keys = set(data.keys()) - set(required_keys + optional_keys)
@@ -2316,6 +2877,7 @@ class Validation:
 					djn_def.Messages.bad_input,
 					f'`{tag}` contains additional key(s) which is blocked `{list(additional_keys)}`'
 					f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+					**kwargs
 				)
 	
 	def check_keys_with_types(
@@ -2377,6 +2939,7 @@ class Validation:
 				djn_def.Messages.bad_input,
 				f'`{tag}` `{type(data)}` must be dict to check multiple keys & types '
 				f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+				**kwargs
 			)
 		for item, types in required_keys.items():
 			if item not in data:
@@ -2384,18 +2947,21 @@ class Validation:
 					djn_def.Messages.bad_input,
 					f'`{tag}` `{item}` which is required is not present in input '
 					f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+					**kwargs
 				)
 			if types and type(data[item]) not in types:
 				return self._raise(
 					djn_def.Messages.bad_input,
 					f'`{tag}` `{item}` `{type(data[item])}` must be in {types} '
 					f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+					**kwargs
 				)
 			if 'checkTruthiness' in types and not data[item]:
 				return self._raise(
 					djn_def.Messages.bad_input,
 					f'`{tag}` `{item}` checkTruthiness failed '
 					f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+					**kwargs
 				)
 		for item, types in optional_keys.items():
 			if types and item in data:
@@ -2404,6 +2970,7 @@ class Validation:
 						djn_def.Messages.bad_input,
 						f'`{tag}` `{item}` `{type(data[item])})` must be in {types} '
 						f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+						**kwargs
 					)
 			
 			if 'checkTruthiness' in types and item in data and not data[item]:
@@ -2411,6 +2978,7 @@ class Validation:
 					djn_def.Messages.bad_input,
 					f'`{tag}` `{item}` checkTruthiness failed '
 					f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+					**kwargs
 				)
 		
 		if block_additional_keys:
@@ -2420,6 +2988,7 @@ class Validation:
 					djn_def.Messages.bad_input,
 					f'`{tag}` contains additional key(s) which is blocked `{list(additional_keys)}`'
 					f'{djn_def.Messages.possible_attack if possible_attack else ""}',
+					**kwargs
 				)
 
 
@@ -2461,10 +3030,7 @@ def d_response(
 	template = kwargs.pop('template', None)
 	template_data = kwargs.pop('template_data', {})
 	
-	if template:
-		if not request.info.response_html:
-			Log.log(f'`{request.info.name}` cant render output when `info.response_html` is false (assuming true)')
-			request.info.response_html = True
+	if template and request.info.response_html:
 		return _make_html_response_ready(
 			request,
 			template,
@@ -2518,6 +3084,9 @@ def d_raise(
 	if isinstance(comment, Exception):
 		comment = f'{kwargs.pop("exc_comment", "")} {comment.__class__.__name__}({comment})'
 	location = location if location else Log.curr_info(3)
+	do_raise = kwargs.pop('do_raise', True)
+	if not do_raise and kwargs.pop('print_not_raised', True):
+		comment = f'(not raised) {comment}'
 	
 	Log.log(
 		f'{message} {comment} user({request.User.uid}) {request.client_ip} [{code}]',
@@ -2545,7 +3114,7 @@ def d_raise(
 		kwargs.pop('template_data', {}),
 		**kwargs
 	)
-	if kwargs.pop('do_raise', True):
+	if do_raise:
 		raise exc
 	return exc
 
@@ -2699,13 +3268,13 @@ def _find_description_based_on_type(
 			return desc
 		
 		if desc['type'] == 'code':
-			return main(desc.get(code, None))
+			return main(desc.get(code))
 		elif desc['type'] == 'message':
-			return main(desc.get(message, None))
+			return main(desc.get(message))
 		elif desc['type'] == 'lang':
-			return main(desc.get(request.lang, None))
+			return main(desc.get(request.lang))
 		elif desc['type'] == 'platform':
-			return main(desc.get(request.info.platform, None))
+			return main(desc.get(request.info.platform))
 	
 	return main(description)
 
@@ -2719,7 +3288,7 @@ def find_description(
 ):
 	if not description:
 		# if no description was received from upper level consider using api_based description
-		description = djn_def.descriptions_api_based.get(request.info.name, None)
+		description = djn_def.descriptions_api_based.get(request.info.name)
 	
 	# search for api_based description
 	description = _find_description_based_on_type(
@@ -2732,7 +3301,7 @@ def find_description(
 	if description is None:
 		# if no descriptions were found search for message_based description
 		description = _find_description_based_on_type(
-			djn_def.descriptions_message_based.get(message, None),
+			djn_def.descriptions_message_based.get(message),
 			request,
 			code,
 			message
@@ -2741,7 +3310,7 @@ def find_description(
 	# region fill custom descriptions
 	if request.info.name == 'User_update' and code == 406:
 		description = description.format(
-			djn_def.descriptions_user_info_field_translator.get(result.get('field', None), {}).get(request.lang, '')
+			djn_def.descriptions_user_info_field_translator.get(result.get('field'), {}).get(request.lang, '')
 		)
 	# endregion
 	
@@ -2872,8 +3441,8 @@ def check_regex(request: CustomRequest, to_check: str, field_name: str, **kwargs
 			return False
 		d_raise(
 			request,
-			djn_def.Messages.bad_input,
-			f'{djn_def.Messages.regex_error} `{field_name}` `{to_check}` {djn_def.Fields.regex_map[field_name]["err"]}',
+			djn_def.Messages.regex_error,
+			f'{field_name} `{to_check}` {djn_def.Fields.regex_map[field_name]["err"]}',
 			result={'field': field_name_to_raise_with if field_name_to_raise_with else field_name},
 			code=406,
 		)

@@ -17,6 +17,8 @@ def objects(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 	-----
 	| Link: Home/objects
 	| methods: post
+	| token required: True
+	| user must be active: True
 
 	Response:
 	-----
@@ -40,7 +42,8 @@ def objects(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 	main:
 		| ---
 	links:
-		| ---
+		| UTILSD.main.MainMiddleware.utils.check_user_if_required
+		| UTILSD.main.MainMiddleware.utils.check_active_user_if_detected
 	possible attack:
 		| ---
 	unexpected:

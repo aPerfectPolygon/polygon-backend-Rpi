@@ -158,7 +158,7 @@ async def authenticate(socket: sck_utils.BasicSocket, data: str) -> ty.Optional[
 		socket_log(socket, Messages.bad_token, f'bad type {data["type"]}', 401, input_data=data)
 		return
 	
-	platform = data.get('platform', None)
+	platform = data.get('platform')
 	if platform is None:
 		socket_log(socket, Messages.bad_input, f'platform not specified', 400, input_data=data)
 		return
@@ -315,7 +315,7 @@ async def client_handler(socket: sck_utils.BasicSocket):
 	except Exception as e:
 		socket_log(socket, Messages.unexpected, f'{e.__class__.__name__}({e})', 400)
 	
-	if not data or data.get('type', None) != 'disconnect':
+	if not data or data.get('type') != 'disconnect':
 		socket_log(socket, Messages.disconnect, None, 200, no_print=True)
 	
 	sockets = sockets.loc[sockets.name != socket.name]

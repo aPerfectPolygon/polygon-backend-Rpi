@@ -13,22 +13,24 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 		base_info.path_generator(
 			'User/SignupSeries/signup',
 			v.User.SignupSeries.signup,
-			input_body_required={
+			input_body_optional={
+				'google_token': [str],
 				'email': [str],
-				'password': [str]
-			},
+				'password': [str],
+				'notification_token': [str]
+			}
 		),
 		base_info.path_generator(
-			'User/SignupSeries/Email/verify',
-			v.User.SignupSeries.Email.verify,
+			'User/SignupSeries/verify',
+			v.User.SignupSeries.verify,
 			input_body_required={
 				'email': [str],
 				'token': [str]
 			}
 		),
 		base_info.path_generator(
-			'User/SignupSeries/Email/re_send',
-			v.User.SignupSeries.Email.re_send,
+			'User/SignupSeries/re_send',
+			v.User.SignupSeries.re_send,
 			input_body_required={
 				'email': [str],
 			}
@@ -65,9 +67,11 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 		base_info.path_generator(
 			'User/login',
 			v.User.login,
-			input_body_required={
+			input_body_optional={
 				'username': [str],
-				'password': [str]
+				'password': [str],
+				'polygon_token': [str],
+				'google_token': [str]
 			}
 		),
 		
@@ -76,7 +80,7 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 			v.User.resign,
 			token_required=True,
 			user_must_be_active=True,
-			user_fields_needed={'template': 'info'}
+			user_fields_needed={'template': 'info', 'main': ['date_joined']}
 		),
 		
 		base_info.path_generator(
@@ -93,8 +97,10 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 			user_must_be_active=True,
 			user_fields_needed={'main': ['password', 'email']},
 			input_body_required={
-				'old_password': [str],
 				'new_password': [str]
+			},
+			input_body_optional={
+				'old_password': [str]
 			}
 		),
 		base_info.path_generator(
@@ -116,6 +122,6 @@ def url_patterns(base_info: djn_utils.ApiInfo):
 app_name = 'api_v1'
 urlpatterns = [
 	path('App/', include('API.v1.Urls.app_urls', 'api_v1_app')),
+	path('Web/', include('API.v1.Urls.web_urls', 'api_v1_web')),
+	path('Test/', include('API.v1.Urls.test_urls', 'api_v1_test')),
 ]
-if not dev_def.is_server:
-	urlpatterns.append(path('Test/', include('API.v1.Urls.test_urls', 'api_v1_test')))

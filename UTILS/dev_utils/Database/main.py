@@ -89,7 +89,11 @@ def log(
 					comment = f'{comment} [FILE UPLOADED] [POSSIBLE ATTACK]'
 				body[k] = v.name
 	
-	if comment and ('[POSSIBLE ATTACK]' in comment or '[UNEXPECTED ERROR]' in comment or '[UNHANDLED]' in comment):
+	if response_code != 410 and comment and (
+			'[POSSIBLE ATTACK]' in comment
+			or '[UNEXPECTED ERROR]' in comment
+			or '[UNHANDLED]' in comment
+	):
 		engines.Email.send(
 			__log_emails,
 			'[POSSIBLE ATTACK]' if '[POSSIBLE ATTACK]' in str(comment) else '[UNEXPECTED ERROR]',

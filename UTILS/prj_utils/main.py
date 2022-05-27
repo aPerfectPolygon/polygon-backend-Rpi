@@ -17,5 +17,12 @@ class Encryptions:
 			return super().decrypt(message[:self.slice_from] + message[self.slice_from + self.slice_len:])
 
 
+def gunicorn_sighub():
+	try:
+		with open('/gunicorn_PolygonApiIRFX.pid') as f:
+			os.kill(int(f.read()), signal.SIGHUP)
+	except:
+		pass
+
 if __name__ == '__main__':
 	print(Encryptions.V1().decrypt(Encryptions.V1().encrypt('hello')))

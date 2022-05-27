@@ -3,10 +3,13 @@ import pandas as pd
 from UTILS.dev_utils.Database.Psql import Psql
 from UTILS.dev_utils import Defaults as dev_def
 from UTILS import dev_utils
+from UTILS.dev_utils.Objects import List
 
 log_emails = []
 mail_servers = {}
 translations = {}
+popup = pd.DataFrame(columns=['id', 'title', 'texts', 'images', 'buttons', 'quiz_id'])
+api_popups = pd.DataFrame(columns=['id', 'uids', 'api'])
 home_objects = pd.DataFrame(columns=['id', 'room_id', 'name', 'type', 'module_type', 'module_io'])
 modules = pd.DataFrame(columns=['id', 'type', 'name'])
 modules_io = pd.DataFrame(columns=['id', 'module', 'name', 'pin', 'io'])
@@ -26,6 +29,8 @@ def update_translations():
 def fill_cache():
 	global log_emails
 	global mail_servers
+	global popup
+	global api_popups
 	global home_objects
 	global modules
 	global modules_io
@@ -38,6 +43,16 @@ def fill_cache():
 	
 	# fill mail_servers
 	mail_servers = {x['name']: x for x in db.read('mail_servers', '*').to_dict(orient='records')}
+	
+	# fill popup
+	_popup = db.read(
+		'popup',
+		['id', 'title', 'texts', 'images', 'buttons', 'quiz_id', 'is_active', 'uids', 'apis'],
+		schema='users_data'
+	)
+	popup = _popup[['id', 'title', 'texts', 'images', 'buttons', 'quiz_id']]
+	api_popups = _popup.loc[_popup.is_active, ['id', 'uids', 'apis']].explode('apis').rename(columns={'apis': 'api'})
+	api_popups['uids'] = '|' + api_popups.uids.apply(lambda x: List.join(x, '|')) + '|'
 	
 	# fill modules
 	db.schema = 'services'
