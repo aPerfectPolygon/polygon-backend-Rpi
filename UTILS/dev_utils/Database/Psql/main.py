@@ -162,7 +162,7 @@ class Psql:
 	@staticmethod
 	def backup(destination=None):
 		if destination is None:
-			destination = Path('/root/dbBackup/psql')
+			destination = '/root/dbBackup/psql'
 		os.makedirs(destination, exist_ok=True)
 		
 		dirs = sorted(os.listdir(destination), reverse=True)
@@ -174,13 +174,14 @@ class Psql:
 		destination += f'/{t_now}'
 		os.makedirs(destination, exist_ok=True)
 		
-		command = f'pg_dump --dbname=postgresql://%s:%s@%s:%s/%s ' % (
+		command = f'pg_dump --dbname=postgresql://%s:%s@%s:%s/%s -f %s/%s.sql' % (
 			Databases['polygonStorage']['user'],
 			Databases['polygonStorage']['pass'],
 			Databases['polygonStorage']['host'],
 			Databases['polygonStorage']['port'],
 			Databases['polygonStorage']['name'],
 			destination,
+			Databases['polygonStorage']['name'],
 		)
 		os.system(command)
 	
