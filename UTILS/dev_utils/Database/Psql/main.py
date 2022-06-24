@@ -191,13 +191,14 @@ class Psql:
 			destination = Path('/root/dbBackup/psql')
 		destination = str(destination / sorted(os.listdir(destination), reverse=True)[0])
 		
-		command = f'psql --dbname=postgresql://%s:%s@%s:%s/%s -f %s/polygonStorage.sql' % (
+		command = f'psql --dbname=postgresql://%s:%s@%s:%s/%s -f %s/%s.sql' % (
 			Databases['polygonStorage']['user'],
 			Databases['polygonStorage']['pass'],
 			Databases['polygonStorage']['host'],
 			Databases['polygonStorage']['port'],
 			Databases['polygonStorage']['name'],
 			destination,
+			Databases['polygonStorage']['name']
 		)
 		os.system(command)
 	
@@ -220,6 +221,7 @@ class Psql:
 			'group_unique': kwargs.get('group_unique', []),
 			'null_type_casting': kwargs.get('null_type_casting'),
 			'group_by': kwargs.get('group_by'),
+			'_with': kwargs.get('_with'),
 		}
 	
 	def get_query(self, query, params, do_print=False) -> ty.Optional[str]:
@@ -367,7 +369,7 @@ class Psql:
 			for item in cond:
 				if dev_utils.is_itterable(item) and len(item) == 3:
 					name, operator, value = item
-					if not ('.' in name or '->' in name or ':' in name or ' ' in name):
+					if not ('.' in name or '->' in name or ':' in name or ' ' in name or '(' in name):
 						name = f'"{name}"'
 					main.append(f'{name} {operator} %s')  # SQLI
 					if operator == 'in' and dev_utils.is_itterable(value) and type(value) is not tuple:
@@ -690,11 +692,11 @@ class Psql:
 			joins: ty.List[tuple] = None,
 			**kwargs
 	) -> pd.DataFrame:
-		schema, auto_connection, print_query, get_query, dt2ts, tz, lo, ob, gb, crt = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, dt2ts, tz, lo, ob, gb, crt, _with = Dict.multiselect(
 			self.handle_kwargs(kwargs),
 			[
 				'schema', 'auto_connection', 'print_query', 'get_query',
-				'dt2ts', 'timezone', 'limit_offset', 'order_by', 'group_by', 'custom_read_types'
+				'dt2ts', 'timezone', 'limit_offset', 'order_by', 'group_by', 'custom_read_types', '_with'
 			]
 		).values()
 		
@@ -710,7 +712,11 @@ class Psql:
 		gb = self._handle_group_by(gb)
 		
 		# first part of query
-		_q = f'select {columns}\nfrom {schema}.{table} main_table'
+		if _with:
+			_q = f'{_with}\n'
+		else:
+			_q = ''
+		_q += f'select {columns}\nfrom {schema}.{table} main_table'
 		
 		# add joins
 		if joins is not None:

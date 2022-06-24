@@ -213,17 +213,6 @@ class CTree:
 			'children': {k: v.tree for k, v in self.children.items()}
 		}
 	
-	@property
-	def piechart(self):
-		# noinspection PyUnresolvedReferences
-		return {
-			'name': self.name,
-			'data': self.data,
-			'count': self.count,
-			'percent': 100.0 if self.parent is None else round((100 * self.count) / self.parent.count, 2),
-			'children': {k: v.piechart for k, v in self.children.items()}
-		}
-
 
 async def aio_safe_request(
 		method: str,

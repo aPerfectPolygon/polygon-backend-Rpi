@@ -13,6 +13,7 @@ def send(
 		var1: ty.Optional[str] = None,
 		var2: ty.Optional[str] = None,
 		var3: ty.Optional[str] = None,
+		callback: ty.Callable = None
 ):
 	if template not in templates:
 		raise ValueError(f'bad template: {template}')
@@ -20,7 +21,7 @@ def send(
 	if not isinstance(receivers, list):
 		receivers = [receivers]
 	
-	Sms.Kavehnegar().send(receivers, template, var1, var2, var3)
+	Sms.Kavehnegar().send(receivers, template, var1, var2, var3, callback)
 
 
 if __name__ == '__main__':

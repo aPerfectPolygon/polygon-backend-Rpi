@@ -9,7 +9,7 @@ class Kavehnegar:
 	url = f'https://api.kavenegar.com/v1/{prj_def.kavenegar_key}/verify/lookup.json'
 	
 	@Decorators.threaded
-	def _send(self, body, rec) -> bool:
+	def _send(self, body, rec, callback: ty.Callable = None) -> bool:
 		res = dev_utils.safe_request(
 			'get',
 			self.url,
@@ -21,7 +21,10 @@ class Kavehnegar:
 			if res.Json['return']['status'] != 200 or res.Json['entries'][0]['status'] > 5:
 				Log.log(f'[SMS API ERROR] {rec} {res.json}')
 			else:
-				print(f'SMS sent {rec} {body["template"]}')
+				if callback:
+					callback(rec, body['template'])
+				else:
+					print(f'SMS sent {rec} {body["template"]}')
 				return True
 		else:
 			Log.log('Kavehnegar not responding')
@@ -34,6 +37,7 @@ class Kavehnegar:
 			var1: str = None,
 			var2: str = None,
 			var3: str = None,
+			callback: ty.Callable = None
 	):
 		body = {'template': template, 'type': 'sms'}
 		if var1 is not None:
@@ -43,10 +47,17 @@ class Kavehnegar:
 		if var3 is not None:
 			body.update({'token3': str(var3).replace(' ', '\u200c')})
 		
+		if prj_def.disable_engine_sms:
+			print(f'[DISABLED] SMS to {receivers} \n\t {body}')
+			if callback:
+				for rec in receivers:
+					callback(rec, template)
+			return True
+		
 		for receiver in receivers:
 			if receiver.startswith('+'):
 				receiver = f'00{receiver[1:]}'
-			self._send(body, receiver)
+			self._send(body, receiver, callback)
 
 
 if __name__ == '__main__':

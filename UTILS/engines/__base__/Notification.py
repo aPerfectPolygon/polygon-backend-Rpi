@@ -105,6 +105,9 @@ class Firebase:
 			return result
 
 		data = self._prepare_data(title, body, image, icon, url, choices, web_url, **kwargs)
+		if prj_def.disable_engine_notification:
+			print(f'[DISABLED] Notification to {receivers} \n\t {data}')
+			return result
 
 		for r in List.split(receivers, count_per_item=1000):
 			body_to_send = {'data': data, 'registration_ids': r}
@@ -144,6 +147,10 @@ class Firebase:
 		"""
 		data = self._prepare_data(title, body, image, icon, url, choices, web_url, **kwargs)
 
+		if prj_def.disable_engine_notification:
+			print(f'[DISABLED] Notification to topic {topic} \n\t {data}')
+			return
+		
 		body_to_send = {'data': data, 'to': topic}
 		if verbose:
 			print(body_to_send)
@@ -176,7 +183,7 @@ class Firebase:
 						expected_codes=[200]
 					)
 					if res.is_success and res.status_code == 200:
-						for i, (token_index, token) in enumerate(not_none_tokens_with_index):
+						for i, (token_index, token) in enumerate(t):
 							response[token_index] = token if 'error' not in res.Json['results'][i] else None
 				except Exception as e:
 					Log.log('Firebase Token Validation Error', exc=e)

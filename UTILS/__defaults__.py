@@ -26,6 +26,10 @@ class Languages:
 platform = pla.system()
 is_server = os.path.exists('/is_server')
 is_test_server = os.path.exists('/is_test_server')
+disable_engine_sms = os.path.exists('/disable_candle_engine_sms')
+disable_engine_notification = os.path.exists('/disable_candle_engine_notification')
+disable_engine_email = os.path.exists('/disable_candle_engine_email')
+
 ip = get_ip()
 project_root = Path(__file__).parent.parent.absolute()
 

@@ -29,6 +29,7 @@ def _send(
 		html: str = None,
 		template: str = None,
 		template_content: dict = None,
+		callback: ty.Callable = None
 ):
 	for _ in range(3):
 		try:
@@ -62,7 +63,10 @@ def _send(
 			_server.sendmail(sender, receiver, msg.as_string())
 			_server.quit()
 			
-			print(f'MAIL sent {subject}')
+			if callback:
+				callback(receiver, subject)
+			else:
+				print(f'MAIL sent {subject}')
 			break
 		
 		except Exception as err:
@@ -83,14 +87,29 @@ def send(
 		html: str = None,
 		template: str = None,
 		template_content: dict = None,
+		callback: ty.Callable = None
 ):
 	if template_content is None:
 		template_content = {}
 	if body is None:
 		body = ''
 	
+	if dev_def.disable_engine_email:
+		print(
+			f'[DISABLED] Email to {receivers} \n\t'
+			f'Subject: {subject}\n\t'
+			f'Body: {body}\n\t'
+			f'Template: {template}\n\t'
+			f'Template Content: {template_content}\n\t'
+			f'html: {html}'
+		)
+		if callback:
+			for rec in receivers:
+				callback(rec, subject)
+		return
+	
 	for receiver in receivers:
 		_send(
 			server, port, sender, password, receiver, subject, body, files,
-			remove_files, html, template, template_content
+			remove_files, html, template, template_content, callback
 		)

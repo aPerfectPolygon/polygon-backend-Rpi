@@ -376,9 +376,5 @@ def change_password(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 	acc.set_password(new_password)
 	acc.save()
 	
-	engines.Email.send(
-		request.User.email,
-		'Password Changed',
-		template=djn_def.templates['forget_password']['change']['success'][request.lang],
-	)
+	djn_utils.Templates(request).email_password_change_successful()
 	return djn_utils.d_response(request, djn_def.Messages.ok)

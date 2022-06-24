@@ -4,15 +4,13 @@
 
 import datetime as _dt
 import typing as ty
-import urllib.parse
 
 import pandas as pd
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password
 
 import UTILS.engines as engines
-from UTILS.dev_utils.Objects import Int, Time, Json
-from UTILS.prj_utils import main as prj_utils
+from UTILS.dev_utils.Objects import Int, Time
 from UTILSD import Defaults as djn_def
 from UTILSD import main as djn_utils
 
@@ -30,7 +28,8 @@ class Email:
 	def send(
 			request: djn_utils.CustomRequest,
 			token: str = None,
-			send_email: ty.Callable = None
+			send_email: ty.Callable = None,
+			**kwargs
 	) -> djn_utils.CustomRequest:
 		"""
 		UpdatedAt: ---
@@ -95,19 +94,19 @@ class Email:
 		
 		if send_email is None:
 			# noinspection PyProtectedMember
-			engines.Email.send(
-				request.User.email,
-				'Activation',
-				template=djn_def.templates['email']['to_confirm'][request.lang],
-				template_content={'token': token}
-			)
+			djn_utils.Templates(request).email_verify_token(token, **kwargs)
 		else:
 			send_email(request, token)
 		
 		return request
 	
 	@staticmethod
-	def verify(request: djn_utils.CustomRequest, email: str, token: str) -> djn_utils.CustomRequest:
+	def verify(
+			request: djn_utils.CustomRequest,
+			email: str,
+			token: str,
+			send_email: bool = False
+	) -> djn_utils.CustomRequest:
 		"""
 		UpdatedAt: ---
 
@@ -218,12 +217,8 @@ class Email:
 		)
 		request.User.email = email
 		
-		engines.Email.send(
-			request.User.email,
-			'Welcome To Polygon',
-			template=djn_def.templates['email']['confirmed'][request.lang],
-			template_content={'username': request.User.username}
-		)
+		if send_email:
+			djn_utils.Templates(request).email_verify_successful()
 		
 		return request
 
@@ -307,15 +302,7 @@ class ForgetPassword:
 		request.db.server.insert(
 			'tokens_forget_pass', pd.DataFrame(columns=['uid', 'token'], data=[[request.User.uid, token]]))
 		
-		engines.Email.send(
-			request.User.email,
-			'Forget Password Token',
-			template=djn_def.templates['forget_password']['send']['success'][request.lang],
-			template_content={
-				'token': token,
-			}
-		)
-		
+		djn_utils.Templates(request).email_password_change_token(token)
 		return request
 	
 	@staticmethod
@@ -580,9 +567,5 @@ class ForgetPassword:
 		data.set_index('id', inplace=True)
 		request.db.server.multiple_update('tokens_forget_pass', data[['is_used']])
 		
-		engines.Email.send(
-			request.User.email,
-			'Password Changed',
-			template=djn_def.templates['forget_password']['change']['success'][request.lang]
-		)
+		djn_utils.Templates(request).email_password_change_successful()
 		return request

@@ -16,22 +16,21 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect
 from django.template.response import SimpleTemplateResponse
-from django.urls import path, re_path
-from django.urls import resolve, ResolverMatch
+from django.urls import path, re_path, resolve, ResolverMatch
 from rest_framework import exceptions
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from UTILS import dev_utils, engines, Cache
+from UTILS import Cache, dev_utils, engines
 from UTILS.dev_utils import Log
 from UTILS.dev_utils.Database import log as db_log
 from UTILS.dev_utils.Database.Psql import Psql
 from UTILS.dev_utils.Objects import String, Time, List, Json
-from UTILS.prj_utils import Defaults as prj_def
+from UTILS.dev_utils.Objects.Google.reCaptcha import verify as verify_recaptcha
+from UTILS.prj_utils import Defaults as prj_def, main as prj_utils
 from UTILS.prj_utils.main import Encryptions
 from UTILSD import Defaults as djn_def
-from UTILS.dev_utils.Objects.Google.reCaptcha import verify as verify_recaptcha
 
 
 class ApiInfo:
@@ -73,6 +72,8 @@ class ApiInfo:
 	
 	allow_files -> if a file was uploaded to this API treat it as possible_attack
 	
+	token_platform_table -> platform to check token against
+	
 	"""
 	platform: str = None
 	methods: ty.List[str] = None
@@ -108,6 +109,8 @@ class ApiInfo:
 	
 	recaptcha_action = None
 	
+	token_platform_table = None
+	
 	attrs = [
 		'platform',
 		'methods',
@@ -131,6 +134,7 @@ class ApiInfo:
 		'response_html',
 		'content_types_to_accept_standard',
 		'content_types_to_accept',
+		'token_platform_table',
 		'allow_files',
 		'recaptcha_action'
 	]
@@ -975,13 +979,21 @@ class CustomUser:
 		
 		return 201
 	
-	def login(self, request, username: str, password: str, treat_as: str = None):
+	def find_user(
+			self,
+			request,
+			username: str,
+			password: str,
+			treat_as: str = None,
+			code_not_found=404,
+			code_not_active=403
+	) -> int:
 		"""
 		UpdatedAt: ---
 
 		About:
 		-----
-		log user in with treating `username` as username and email
+		find user with treating `username` as username and email
 
 		Parameters:
 		-----
@@ -989,27 +1001,27 @@ class CustomUser:
 		username: str
 		password: str
 		treat_as: str, default: None
-			treat `username` as what (username or email)
+			treat `username` as (username or email)
 
 		Django Errors:
 		-----
 		main:
-			| status: 404
+			| status: ** code_not_found **
 			| comment: username not found
 			| Message: UTILSD.Defaults.Messages.account_not_found
 			| Result: null
 			| ----------------------------------------------------
-			| status: 404
+			| status: ** code_not_found **
 			| comment: bad password
 			| Message: UTILSD.Defaults.Messages.account_not_found
 			| Result: null
 			| ----------------------------------------------------
-			| status: 403
+			| status: ** code_not_active **
 			| comment: ---
 			| Message: UTILSD.Defaults.Messages.inactive_user
 			| Result: null
 			| ---------------------------------------------------------------
-			| status: 403
+			| status: ** code_not_active **
 			| comment: ---
 			| Message: UTILSD.Defaults.Messages.suspended_user
 			| Result: null
@@ -1030,7 +1042,7 @@ class CustomUser:
 		):
 			user = request.db.server.read(
 				'account_account',
-				['id', 'password', 'status'],
+				['id', 'password', 'status', 'is_admin'],
 				[('username', '=', username)]
 			).to_dict('records')
 		
@@ -1040,7 +1052,7 @@ class CustomUser:
 		):
 			user = request.db.server.read(
 				'account_account',
-				['id', 'password', 'status'],
+				['id', 'password', 'status', 'is_admin'],
 				[("replace(email, '.', '')", '=', username.replace('.', ''))]
 			).to_dict('records')
 		
@@ -1049,40 +1061,72 @@ class CustomUser:
 				request,
 				djn_def.Messages.account_not_found,
 				f'login attempt `{username}` `{password}`',
-				code=404
+				code=code_not_found
 			)
 			return  # just for ide warnings
 		user = user[0]
 		self.uid = user['id']
 		self.status = user['status']
+		self.is_admin = user['is_admin']
 		
 		if not check_password(password, user['password']):
 			d_raise(
 				request,
 				djn_def.Messages.account_not_found,
 				f'login attempt `{username}` `{password}` (bad password)',
-				code=404
+				code=code_not_found
 			)
 		
 		if self.status == djn_def.Fields.status_map['inactive']:
 			d_raise(
 				request,
 				djn_def.Messages.inactive_user,
-				code=403,
+				code=code_not_active
 			)
 		elif self.status == djn_def.Fields.status_map['suspended']:
 			d_raise(
 				request,
 				djn_def.Messages.suspended_user,
-				code=403,
+				code=code_not_active
 			)
 		elif self.status != djn_def.Fields.status_map['active']:
 			d_raise(
 				request,
 				djn_def.Messages.inactive_user,
 				f'user is not active {djn_def.Messages.must_not_happen}',
-				code=403,
+				code=code_not_active
 			)
+		
+		return self.uid
+	
+	def login(self, request, username: str, password: str, treat_as: str = None):
+		"""
+		UpdatedAt: ---
+
+		About:
+		-----
+		log user in with treating `username` as username and email
+
+		Parameters:
+		-----
+		request: CustomRequest
+		username: str
+		password: str
+		treat_as: str, default: None
+			treat `username` as (username or email)
+
+		Django Errors:
+		-----
+		main:
+			| ---
+		links:
+			| UTILSD.main.CustomUser.find_user
+		possible attack:
+			| ---
+		unexpected:
+			| ---
+		"""
+		self.find_user(request, username, password, treat_as)
 		
 		Token(request).regenerate()
 		request.db.server.update(
@@ -1138,6 +1182,23 @@ class CustomUser:
 		
 		engines.Notification.Topic.unassign(topic, _tokens)
 	
+	def send_email(
+			self,
+			subject: str,
+			body: str = None,
+			html: str = None,
+			template: str = None,
+			template_content: dict = None,
+	):
+		engines.Email.send(
+			self.email,
+			subject,
+			body,
+			html=html,
+			template=template,
+			template_content=template_content
+		)
+	
 	def send_notification(
 			self,
 			title: str,
@@ -1148,10 +1209,11 @@ class CustomUser:
 			url: str = None,
 			web_url: str = None,
 			choices: ty.List[str] = None,
+			uid: int = None,
 			**kwargs
 	):
 		engines.Notification.send(
-			[self.uid],
+			[uid] if uid else [self.uid],
 			title,
 			body,
 			target,
@@ -1253,6 +1315,46 @@ class CustomRequest(Request, ABC):
 	db: CustomDb = None
 	market: str = None
 	lang: str = None
+
+
+class Templates:
+	def __init__(self, request: CustomRequest):
+		self.request = request
+	
+	# region Email
+	
+	def email_verify_token(self, token: str, **kwargs):
+		self.request.User.send_email(
+			'Verify Your Email',
+			template=djn_def.templates['email']['to_confirm'][self.request.lang],
+			template_content={'token': token}
+		)
+	
+	def email_verify_successful(self):
+		self.request.User.send_email(
+			'Welcome To Polygon',
+			template=djn_def.templates['email']['confirmed'][self.request.lang],
+			template_content={'username': self.request.User.username}
+		)
+		
+	def email_password_change_token(self, token: str):
+		self.request.User.send_email(
+			'Forget Password Token',
+			template=djn_def.templates['forget_password']['send']['success'][self.request.lang],
+			template_content={
+				'token': token,
+			}
+		)
+	
+	def email_password_change_successful(self):
+		self.request.User.send_email(
+			'Password Changed',
+			template=djn_def.templates['forget_password']['change']['success'][self.request.lang]
+		)
+	
+	# endregion
+	
+	pass
 
 
 class CustomException(exceptions.APIException):
@@ -1435,6 +1537,8 @@ class MainMiddleware:
 				ip = request.META.get('HTTP_X_REAL_IP')
 				if not ip:
 					ip = request.META.get('REMOTE_ADDR')
+			if ',' in ip:
+				ip = ip.split(',')[0]
 			return ip
 		
 		@staticmethod
@@ -2083,7 +2187,7 @@ class MainMiddleware:
 					schema='users_data'
 				).uid.tolist()
 				if not uid and not (
-						re.match('^\/v1\/Test\/User\/SignupSeries\/(signup|re_send|verify)$', request.path)
+						re.match('^/v1/Test/User/SignupSeries/(signup|re_send|verify)$', request.path)
 						and request.db.server.count(
 					'account_account', 'id', [('status', '=', 'ACTIVE')], schema='users_data') == 0
 				):
@@ -2144,7 +2248,7 @@ class MainMiddleware:
 				_Token = Token(request)
 				
 				try:
-					request.User.uid = _Token.get(token=token)['uid']
+					request.User.uid = _Token.get(token=token, platform=request.info.token_platform_table)['uid']
 				except Token.DoesNotExist:
 					return m_raise(
 						request,
@@ -2396,6 +2500,7 @@ class MainMiddleware:
 			if not hasattr(result, 'data'):
 				return result
 			
+			# noinspection PyUnresolvedReferences
 			result.data.update({'Popup': None})
 			
 			if 200 <= result.status_code < 400:
@@ -2415,7 +2520,10 @@ class MainMiddleware:
 				).id.tolist()
 				if not popup_ids:
 					return result
-				result.data.update({'Popup': popup_ids[0]})
+				# noinspection PyUnresolvedReferences
+				result.data.update({'Popup': prj_utils.get_popup(
+					request.db.server, request.User.uid, request.lang, popup_ids[0]
+				)})
 			return result
 	
 	def __init__(self, get_response):
@@ -3381,6 +3489,22 @@ def gen_random_username(db: Psql) -> str:
 
 # region Regex
 
+def __r_filter(_to_check: str, r_map: dict, check_regex2=False) -> ty.Optional[bool]:
+	r = r_map.get('regex')
+	r2 = r_map.get('regex2')
+	r_err = r_map.get('err')
+	ignore_illegal_chars = r_map.get('ignore_illegal_chars', False)
+	r = r2 if check_regex2 else r
+	
+	if None in [r, r_err]:
+		return
+	if r == 'ALL':
+		return True
+	
+	match = bool(re.search(r, _to_check))
+	if match and not ignore_illegal_chars:
+		return String.r_handle_illegal_chars(_to_check, except_keys=[','], ultra=True, injection_avoid=True)
+	return match
 
 def check_regex(request: CustomRequest, to_check: str, field_name: str, **kwargs):
 	"""
@@ -3410,23 +3534,6 @@ def check_regex(request: CustomRequest, to_check: str, field_name: str, **kwargs
 		| ----------------------------------------------------
 	"""
 	
-	def r_filter(_to_check: str, r_map: dict, check_regex2=False) -> ty.Optional[bool]:
-		r = r_map.get('regex')
-		r2 = r_map.get('regex2')
-		r_err = r_map.get('err')
-		ignore_illegal_chars = r_map.get('ignore_illegal_chars', False)
-		r = r2 if check_regex2 else r
-		
-		if None in [r, r_err]:
-			return
-		if r == 'ALL':
-			return True
-		
-		match = bool(re.search(r, _to_check))
-		if match and not ignore_illegal_chars:
-			return String.r_handle_illegal_chars(_to_check, except_keys=[','], ultra=True, injection_avoid=True)
-		return match
-	
 	if field_name not in djn_def.Fields.regex_map.keys():
 		d_raise(
 			request,
@@ -3436,7 +3543,7 @@ def check_regex(request: CustomRequest, to_check: str, field_name: str, **kwargs
 	
 	do_raise = kwargs.pop('do_raise', True)
 	field_name_to_raise_with = kwargs.pop('field_name_to_raise_with', None)
-	if not r_filter(to_check, djn_def.Fields.regex_map[field_name], **kwargs):
+	if not __r_filter(to_check, djn_def.Fields.regex_map[field_name], **kwargs):
 		if not do_raise:
 			return False
 		d_raise(

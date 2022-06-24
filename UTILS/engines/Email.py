@@ -14,6 +14,7 @@ def send(
 		template: str = None,
 		template_content: dict = None,
 		mail_server: str = None,
+		callback: ty.Callable = None
 ):
 	if not isinstance(receivers, list):
 		receivers = [receivers]
@@ -43,6 +44,7 @@ def send(
 		html,
 		template,
 		template_content,
+		callback
 	)
 
 
