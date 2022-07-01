@@ -129,7 +129,6 @@ def server_first_setup(**kwargs):
 		{
 			'id': 'serial primary key',
 			'send_at': 'bigint',
-			'server_mode': 'varchar(4)',
 			'important': 'bool default false',
 			'receivers': 'text[] default null',
 			'topics': 'text[] default null',

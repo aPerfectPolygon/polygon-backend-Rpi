@@ -250,7 +250,6 @@ class Topic:
 	@staticmethod
 	@Decorators.threaded
 	def send(
-			server_mode: str,
 			topic: str,
 			title: str,
 			body: str,
@@ -294,7 +293,7 @@ class Topic:
 		is_quiz = bool(choices)
 		_choices = {}
 		if is_quiz:
-			db = Psql('users_data', open=True, db_name=server_mode)
+			db = Psql('users_data', open=True)
 			quiz_id = int(db.insert(
 				'users_notification_quiz',
 				pd.DataFrame(
@@ -368,7 +367,6 @@ def validate_tokens():
 
 if __name__ == '__main__':
 	# send(
-	# 	prj_def.server_mode,
 	# 	[1, 2],
 	# 	'title',
 	# 	'body',
@@ -377,12 +375,11 @@ if __name__ == '__main__':
 	# 	target=1
 	# )
 	# send2topic(
-	# 	prj_def.server_mode,
 	# 	'FARIBORZx',
 	# 	'title',
 	# 	'body',
 	# 	choices=['test'],
 	# )
-	validate_tokens('IRFX')
+	validate_tokens()
 	print('ok')
 	pass

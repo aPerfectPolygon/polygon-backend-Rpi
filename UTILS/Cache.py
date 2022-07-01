@@ -56,7 +56,10 @@ def fill_cache():
 	
 	# fill modules
 	db.schema = 'services'
-	home_objects = db.read('home_objects', ['id', 'room_id', 'name', 'type', 'module_type', 'module_io'])
+	home_objects = db.read('home_objects', ['id', 'room_id', 'name', 'type', 'module_type', 'module_io']).astype({
+		'room_id': 'Int64',
+		'module_id': 'Int64'
+	})
 	modules = db.read('modules', ['id', 'type', 'name'])
 	modules_io = db.read(
 		'modules',

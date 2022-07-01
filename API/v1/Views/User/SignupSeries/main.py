@@ -13,7 +13,7 @@ def signup(request: djn_utils.CustomRequest, info: djn_utils.ApiInfo):
 
 	Input:
 	-----
-	| Link: User/SignupSeries/signup, User/SignupSeriesV2/signup
+	| Link: User/SignupSeries/signup
 	| methods: post
 	| recaptcha_action: ss_signup
 	| optional body:

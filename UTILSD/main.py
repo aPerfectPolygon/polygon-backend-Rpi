@@ -2166,15 +2166,10 @@ class MainMiddleware:
 					'testnet_user': request.headers.get('HTTP_TESTNET_AUTHENTICATION'),
 				})
 				if not request.headers['testnet_user']:
-					d_raise(
-						request,
-						djn_def.Messages.possible_attack,
-						f'no testnet_user {djn_def.Messages.possible_attack}',
-						do_raise=False
-					)
 					return m_raise(
 						request,
 						djn_def.Messages.not_found_404,
+						f'no testnet_user {djn_def.Messages.possible_attack}',
 						code=404,
 						response_just_message=True,
 						response_additional_headers={'Content-Type': 'text/plain'}
