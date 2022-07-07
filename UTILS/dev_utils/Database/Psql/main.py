@@ -35,6 +35,8 @@ DatabseUsers.update({'default': list(DatabseUsers.values())[0]})
 
 
 class Psql:
+	standard_operators = ['and', 'or']
+	
 	# noinspection PyShadowingBuiltins
 	def __init__(self, schema, open=False, db_name='default'):
 		self.db_name = db_name
@@ -222,6 +224,8 @@ class Psql:
 			'null_type_casting': kwargs.get('null_type_casting'),
 			'group_by': kwargs.get('group_by'),
 			'_with': kwargs.get('_with'),
+			'_from': kwargs.get('_from', ''),
+			'_joins': kwargs.get('_joins'),
 		}
 	
 	def get_query(self, query, params, do_print=False) -> ty.Optional[str]:
@@ -339,7 +343,8 @@ class Psql:
 	@staticmethod
 	def _handle_table_name(table_name: str) -> str:
 		"""if table_name has upper case characters and doesn't start with " add double quote to beginning and end """
-		if String.has_upper(table_name) and not table_name.startswith('"'):
+		if String.has_upper(table_name) and not table_name.startswith(
+				'"') and '.' not in table_name and ' as ' not in table_name:
 			return f'"{table_name}"'
 		else:
 			return table_name
@@ -365,23 +370,47 @@ class Psql:
 		if dev_utils.is_itterable(cond):
 			main = []
 			params = []
+			operators = []
 			
-			for item in cond:
-				if dev_utils.is_itterable(item) and len(item) == 3:
-					name, operator, value = item
-					if not ('.' in name or '->' in name or ':' in name or ' ' in name or '(' in name):
-						name = f'"{name}"'
-					main.append(f'{name} {operator} %s')  # SQLI
-					if operator == 'in' and dev_utils.is_itterable(value) and type(value) is not tuple:
-						value = tuple(value)
-					params.append(value)
+			for i, item in enumerate(cond):
+				if dev_utils.is_itterable(item):
+					if len(operators) != len(main):
+						operators.append('and')
+					
+					if isinstance(item, list):
+						res = self._handle_conditions(item)
+						main.append(f"({res['main']})")
+						params.extend(res['params'])
+					elif isinstance(item, tuple) and len(item) == 3:
+						name, operator, value = item
+						if not ('.' in name or '->' in name or ':' in name or ' ' in name or '(' in name):
+							name = f'"{name}"'
+						main.append(f'({name} {operator} %s)')  # SQLI
+						if operator == 'in' and dev_utils.is_itterable(value) and type(value) is not tuple:
+							value = tuple(value)
+						params.append(value)
+					else:
+						Log.log(
+							f'[{self.db_name}] bad item in conditions {item}', location_depth=3, class_name='myDb'
+						)
+				elif isinstance(item, str):
+					if item in self.standard_operators:
+						operators.append(item)
+					else:
+						main.append(item)
 				else:
 					Log.log(
 						f'[{self.db_name}] bad item in conditions {item}', location_depth=3, class_name='myDb'
 					)
 			
+			q = ''
+			for i, item in enumerate(main):
+				if i == 0:
+					q += item
+				else:
+					q += f' {operators[i-1]} {item} '
 			return {
-				'main': ' AND '.join(main),
+				'main': q,
 				'params': params
 			}
 		
@@ -760,11 +789,11 @@ class Psql:
 		return result
 	
 	def update(self, table: str, data: pd.DataFrame, conditions: ty.List[tuple], **kwargs) -> pd.DataFrame:
-		schema, auto_connection, print_query, get_query, ct, ts_columns, tz, returning, dt2ts, crt = Dict.multiselect(
+		schema, auto_connection, print_query, get_query, ct, ts_columns, tz, returning, dt2ts, crt, _from, _joins = Dict.multiselect(
 			self.handle_kwargs(kwargs),
 			[
 				'schema', 'auto_connection', 'print_query', 'get_query', 'custom_types',
-				'ts_columns', 'timezone', 'returning', 'dt2ts', 'custom_read_types'
+				'ts_columns', 'timezone', 'returning', 'dt2ts', 'custom_read_types', '_from', '_joins'
 			]
 		).values()
 		if not self._check_connection(auto_connection):
@@ -774,6 +803,11 @@ class Psql:
 		conditions = self._handle_conditions(conditions)
 		ct = self._handle_custom_types(ct, data.columns)
 		table = self._handle_table_name(table)
+		if _from:
+			_from = f'from {self._handle_table_name(_from)}'
+			if _joins:
+				_from += f'\n\t{self._handle_joins(_joins)}'
+			_from += '\n'
 		
 		if not conditions:
 			Log.log(f'[{self.db_name}] No `conditions` specified', location_depth=3, class_name='myDb')
@@ -795,7 +829,7 @@ class Psql:
 			data.update(self._handle_ts_columns(ts_columns))
 		data = ',\n\t'.join(f'{k} = {v}' for k, v in data.items())
 		
-		_q = f'update {schema}.{table} set \n\t{data}\nwhere\n\t{conditions["main"]} '
+		_q = f'update {schema}.{table} set \n\t{data}\n{_from}where\n\t{conditions["main"]} '
 		_p = values['params'] + conditions["params"]
 		
 		# add returning

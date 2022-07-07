@@ -10,10 +10,20 @@ mail_servers = {}
 translations = {}
 popup = pd.DataFrame(columns=['id', 'title', 'texts', 'images', 'buttons', 'quiz_id'])
 api_popups = pd.DataFrame(columns=['id', 'uids', 'api'])
-home_objects = pd.DataFrame(columns=['id', 'room_id', 'name', 'type', 'module_type', 'module_io'])
+
+# home
 modules = pd.DataFrame(columns=['id', 'type', 'name'])
-modules_io = pd.DataFrame(columns=['id', 'module', 'name', 'pin', 'io'])
-home_objects_api = []
+modules_io_pins = pd.DataFrame(columns=['id', 'module_id', 'module_name', 'pin', 'io'])
+rooms = pd.DataFrame(columns=['id', 'room_id', 'name'])
+objects = pd.DataFrame(columns=['id', 'room_id', 'room_name', 'module_pin_id', 'state', 'name', 'type'])
+objects_input = pd.DataFrame(columns=[
+	'id', 'room_id', 'room_name', 'object_id', 'module_pin_id',
+	'object_state', 'object_name', 'object_type', 'invert', 'is_momentary'
+])
+objects_output = pd.DataFrame(columns=[
+	'id', 'room_id', 'room_name', 'object_id', 'module_pin_id',
+	'object_state', 'object_name', 'object_type', 'controlled_by'
+])
 
 
 def update_translations():
@@ -31,9 +41,13 @@ def fill_cache():
 	global mail_servers
 	global popup
 	global api_popups
-	global home_objects
+	
+	global rooms
 	global modules
-	global modules_io
+	global modules_io_pins
+	global objects
+	global objects_input
+	global objects_output
 	
 	update_translations()
 	db = Psql('constants', open=True)
@@ -55,19 +69,38 @@ def fill_cache():
 	api_popups['uids'] = '|' + api_popups.uids.apply(lambda x: List.join(x, '|')) + '|'
 	
 	# fill modules
-	db.schema = 'services'
-	home_objects = db.read('home_objects', ['id', 'room_id', 'name', 'type', 'module_type', 'module_io']).astype({
-		'room_id': 'Int64',
-		'module_id': 'Int64'
-	})
+	db.schema = 'home'
 	modules = db.read('modules', ['id', 'type', 'name'])
-	modules_io = db.read(
-		'modules',
-		['io.id', 'module', 'name', 'pin', 'io'],
-		[('type', '=', 'IO')],
-		joins=[('inner', 'services.modules_io', 'io', 'main_table.id', '=', 'io.module')],
+	modules_io_pins = db.read(
+		'modules_io_pins', ['main_table.id', 'module_id', 'name as module_name', 'pin', 'io'],
+		joins=[('inner', 'home.modules', 'm', 'main_table.module_id', '=', 'm.id')]
 	)
-
+	rooms = db.read('rooms', ['id', 'room_id', 'name'])
+	objects = db.read(
+		'objects', ['main_table.id', 'main_table.room_id', 'r.name as room_name', 'module_pin_id', 'state', 'main_table.name', 'type'],
+		joins=[('inner', 'home.rooms', 'r', 'main_table.room_id', '=', 'r.id')]
+	)
+	objects_input = db.read(
+		'objects_input', [
+			'main_table.id', 'o.room_id', 'r.name as room_name', 'object_id', 'module_pin_id',
+			'state as object_state', 'o.name as object_name', 'type as object_type', 'invert', 'is_momentary'
+		],
+		joins=[
+			('inner', 'home.objects', 'o', 'main_table.object_id', '=', 'o.id'),
+			('inner', 'home.rooms', 'r', 'o.room_id', '=', 'r.id'),
+		]
+	)
+	objects_output = db.read(
+		'objects_output', [
+			'main_table.id', 'o.room_id', 'r.name as room_name', 'object_id', 'module_pin_id',
+			'state as object_state', 'o.name as object_name', 'type as object_type', 'controlled_by'
+		],
+		joins=[
+			('inner', 'home.objects', 'o', 'main_table.object_id', '=', 'o.id'),
+			('inner', 'home.rooms', 'r', 'o.room_id', '=', 'r.id'),
+		]
+	)
+	
 	db.close()
 
 

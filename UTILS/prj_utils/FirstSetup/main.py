@@ -106,6 +106,90 @@ def server_first_setup(**kwargs):
 	
 	# endregion
 	
+	# region home
+	db.schema = 'home'
+	db.create_schema()
+	
+	if not db.table_exists('modules'):
+		db.create(
+			'modules',
+			{
+				'id': 'serial primary key',
+				'type': 'varchar',
+				'name': 'varchar'
+			}
+		)
+		db.insert('modules', pd.read_excel('modules.xlsx'))
+	
+	if not db.table_exists('modules_io_pins'):
+		db.create(
+			'modules_io_pins',
+			{
+				'id': 'serial primary key',
+				'module_id': 'integer references home.modules(id) on delete cascade',
+				'pin': 'integer',
+				'io': 'varchar(2)',
+				'state': 'integer default 0',
+			},
+			group_unique=['module_id', 'pin']
+		)
+		db.insert('modules_io_pins', pd.read_excel('modules_io_pins.xlsx'))
+	
+	if not db.table_exists('rooms'):
+		db.create(
+			'rooms',
+			{
+				'id': 'serial primary key',
+				'room_id': 'integer references home.rooms(id) on delete cascade',
+				'name': 'varchar'
+			},
+			group_unique=['room_id', 'name']
+		)
+		db.insert('rooms', pd.read_excel('rooms.xlsx'))
+	
+	if not db.table_exists('objects'):
+		db.create(
+			'objects',
+			{
+				'id': 'serial primary key',
+				'room_id': 'integer references home.rooms(id) on delete cascade',
+				'module_pin_id': 'integer references home.modules_io_pins(id) on delete cascade',
+				'state': 'integer default 0',
+				'name': 'varchar',
+				'type': 'varchar',
+			},
+			group_unique=['room_id', 'name']
+		)
+		db.insert('objects', pd.read_excel('objects.xlsx'))
+	
+	if not db.table_exists('objects_input'):
+		db.create(
+			'objects_input',
+			{
+				'id': 'serial primary key',
+				'object_id': 'integer unique references home.objects(id) on delete cascade',
+				'invert': 'bool default false',
+				'is_momentary': 'bool default false',
+			},
+		)
+		db.insert(
+			'objects_input',
+			pd.read_excel('objects_input.xlsx').astype({'invert': 'bool', 'is_momentary': 'bool'})
+		)
+	
+	if not db.table_exists('objects_output') or True:
+		db.create(
+			'objects_output',
+			{
+				'id': 'serial primary key',
+				'object_id': 'integer unique references home.objects(id) on delete cascade',
+				'controlled_by': 'integer references home.objects_input(id) on delete cascade',
+			},
+		)
+		db.insert('objects_output', pd.read_excel('objects_output.xlsx'))
+	
+	# endregion
+	
 	# region services
 	db.schema = 'services'
 	db.create_schema()
@@ -151,47 +235,6 @@ def server_first_setup(**kwargs):
 		ts_columns='created',
 	)
 	
-	if not db.table_exists('modules'):
-		db.create(
-			'modules',
-			{
-				'id': 'serial primary key',
-				'type': 'varchar',
-				'name': 'varchar',
-			},
-		)
-		db.insert('modules', pd.read_excel('modules.xlsx'))
-	
-	if not db.table_exists('modules_io'):
-		db.create(
-			'modules_io',
-			{
-				'id': 'serial primary key',
-				'module': 'integer references services.modules(id) on delete cascade',
-				'pin': 'integer',
-				'io': 'varchar(2)',
-				'state': 'integer default 0',
-			},
-			group_unique=['module', 'pin']
-		)
-		db.insert('modules_io', pd.read_excel('modules_io.xlsx'))
-	
-	if not db.table_exists('home_objects'):
-		db.create(
-			'home_objects',
-			{
-				'id': 'serial primary key',
-				'room_id': 'integer references services.home_objects(id) on delete cascade',
-				'name': 'varchar',
-				'type': 'varchar',
-				'module_type': 'varchar',
-				'module_io': 'integer references services.modules_io(id) on delete cascade',
-			},
-			group_unique=['room_id', 'name']
-		
-		)
-		db.insert('home_objects', pd.read_excel('home_objects.xlsx'))
-	
 	# endregion
 	
 	# region logs
@@ -232,7 +275,8 @@ def server_first_setup(**kwargs):
 		manage_py = f'{root}/manage.py'
 		
 		if os.path.exists(manage_py):
-			os.system(f'. {root}/venv/bin/activate && python {manage_py} makemigrations && python {manage_py} makemigrations account && python {manage_py} migrate')
+			os.system(
+				f'. {root}/venv/bin/activate && python {manage_py} makemigrations && python {manage_py} makemigrations account && python {manage_py} migrate')
 		else:
 			Log.log('could not find manage.py file to create migrations')
 			create_users_data = False

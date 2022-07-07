@@ -136,7 +136,9 @@ class SerialManager:
 					break
 				
 				try:
-					_type, name, version, tag, loc, comment, pin, state = r.split('|')
+					splitted = r.split('|')
+					_type, name, version, tag, loc, comment = splitted[:6]
+					extra = splitted[6:]
 				except Exception as e:
 					Log.log('parsing error', exc=e)
 					continue
@@ -144,34 +146,33 @@ class SerialManager:
 				tag, loc, comment = self._translator(tag, loc, comment)
 				
 				if _type == 'IO':
+					try:
+						pin, state = extra
+					except Exception as e:
+						Log.log('IO module parsing error', exc=e)
+						continue
 					await self.io_callback(name, version, tag, loc, comment, int(pin), int(state))
 				else:
 					Log.log(f'module type {_type} not found')
 	
 	async def io_send_configs(self, name: str, configs: ty.List[dict]):
+		if self.s is None:
+			return
+
 		sio = []
-		read_inputs = []
-		set_outputs = []
+		ri = []
+		so = []
 		for pin in configs:
 			sio.append(f'{pin["pin"]}={self._io_config_io_map[pin["io"]]}')
 			if pin['io'].endswith('I'):
-				read_inputs.append(str(pin["pin"]))
+				ri.append(str(pin["pin"]))
 			else:
-				set_outputs.append(f'{pin["pin"]}={pin["state"]}')
+				so.append(f'{pin["pin"]}={pin["state"]}')
 		
-		if self.s is None:
-			return
-		await self.s.send(
-			f'IO|{name}|SIO{",".join(sio)}\n'
-			f'IO|{name}|RI{",".join(read_inputs)}\n'
-			f'IO|{name}|SO{",".join(set_outputs)}'
-		)
+		await self.s.send(f'IO|{name}|SIO{",".join(sio)}\nIO|{name}|RI{",".join(ri)}\nIO|{name}|SO{",".join(so)}')
 	
 	async def io_set_output(self, name: str, settings: dict):
-		so = []
-		for pin, state in settings.items():
-			so.append(f'{pin}={state}')
-		
 		if self.s is None:
 			return
-		await self.s.send(f'IO|{name}|SO{",".join(so)}')
+
+		await self.s.send(f'IO|{name}|SO{",".join([f"{pin}={state}" for pin, state in settings.items()])}')
